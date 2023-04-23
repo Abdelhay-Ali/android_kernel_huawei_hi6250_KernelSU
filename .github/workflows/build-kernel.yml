@@ -31,13 +31,15 @@ jobs:
         defconfig: p20_defconfig
         image: Image.gz-dtb
         
-    - name: Generate release tag
-      id: generate_release_tag
-      uses: amitsingh-007/next-release-tag@v4.0.0
+    - name: Get current date
+      id: date
+      run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+
+    - name: Tag snapshot
+      uses: tvdias/github-tagger@v0.0.1
       with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag_prefix: 'v'
-          tag_template: 'yyyy.mm.dd.i'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.date.outputs.date }}
 
     - name: Release build
       uses: ncipollo/release-action@v1
@@ -46,4 +48,4 @@ jobs:
         #artifacts: "kernel_huawei_hi6250_4.9.319/artifacts/${{ steps.build.outputs.outfile }}"
         token: ${{ secrets.GITHUB_TOKEN }}
         allowUpdates: true
-        tag: ${{ steps.generate_release_tag.outputs.next_release_tag }}
+        tag: ${{ steps.date.outputs.date }}

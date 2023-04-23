@@ -56,8 +56,11 @@ msg "Installing toolchain..."
             exit 1
         fi
         
-        wget -c https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-elf/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf.tar.xz --no-check-certificate
-        tar -xvf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf.tar.xz
+        #wget -c https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-elf/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf.tar.xz --no-check-certificate
+        wget -c https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/aarch64-elf/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-elf.tar.xz --no-check-certificate
+
+        
+        tar -xvf gcc-linaro-4.9.4-2017.01-x86_64_aarch64-elf.tar.xz
         git config --global --add safe.directory /github/workspace
 
         ln -sf /usr/bin/gcc-"$ver_number" /usr/bin/gcc
@@ -70,7 +73,7 @@ msg "Installing toolchain..."
         ln -sf /usr/bin/arm-linux-gnueabi-gcc-"$ver_number" /usr/bin/arm-linux-gnueabi-gcc
 
         #export CROSS_COMPILE="aarch64-linux-gnu-"
-        export CROSS_COMPILE="/github/workspace/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf/bin/aarch64-elf-"
+        export CROSS_COMPILE="/github/workspace/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-elf/bin/aarch64-elf-"
         export CROSS_COMPILE_ARM32="arm-linux-gnueabi-"
   
 

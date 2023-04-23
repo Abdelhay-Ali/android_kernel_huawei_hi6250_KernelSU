@@ -1,0 +1,41 @@
+name: Build Kernel
+
+on:
+  watch:
+    types: [started]
+  workflow_dispatch:
+ 
+jobs:
+  build:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kernel source
+      uses: actions/checkout@v2
+
+    - name: Checkout zipper
+      uses: actions/checkout@v2
+      with:
+        repository: lemniskett/AnyKernel3
+        path: zipper
+
+    - name: Android kernel build
+      uses: Abdelhay-Ali/kernel_huawei_hi6250_4.9.319@master 
+      id: build
+      env:
+        NAME: Dark-Ages-Último
+      with:
+        arch: arm64
+        compiler: gcc/9
+        defconfig: phenix_defconfig
+        image: Image.gz-dtb
+
+    - name: Release build
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: ${{ steps.build.outputs.outfile }}
+        #artifacts: "kernel_huawei_hi6250_4.9.319/artifacts/${{ steps.build.outputs.outfile }}"
+        token: ${{ secrets.GITHUB_TOKEN }}
+        allowUpdates: true
+        tag: v2.0

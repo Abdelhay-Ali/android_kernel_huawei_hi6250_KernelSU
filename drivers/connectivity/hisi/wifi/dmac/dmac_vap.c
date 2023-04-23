@@ -984,38 +984,17 @@ oal_void dmac_vap_update_rsp_frm_rate(oal_uint8 uc_vap_id, oal_uint8 uc_protocol
         return;
     }
 
-    /* 数据速率为11ac */
-    if (WLAN_VHT_PHY_PROTOCOL_MODE == uc_protocol_mode)
+    /* 数据速率为11ac/11n */
+    if ((WLAN_VHT_PHY_PROTOCOL_MODE == uc_protocol_mode) ||
+        (WLAN_HT_PHY_PROTOCOL_MODE == uc_protocol_mode))
     {
-        /* 80M */
-        if (uc_bandwidth >= WLAN_BAND_ASSEMBLE_80M)
+        /* 80M/40M带宽回复CTS固定6Mbps */
+        if (uc_bandwidth >= WLAN_BAND_ASSEMBLE_40M)
         {
-            /* 响应帧使用24M速率 */
-            if (WLAN_PHY_RATE_24M != pst_dmac_dev->uc_rsp_frm_rate_val)
+            if (WLAN_PHY_RATE_6M != pst_dmac_dev->uc_rsp_frm_rate_val)
             {
-                pst_dmac_dev->uc_rsp_frm_rate_val = WLAN_PHY_RATE_24M;
+                pst_dmac_dev->uc_rsp_frm_rate_val = WLAN_PHY_RATE_6M;
                 hal_set_rsp_rate((oal_uint32)pst_dmac_dev->uc_rsp_frm_rate_val);
-            }
-        }
-        /* 40M */
-        else if (uc_bandwidth >= WLAN_BAND_ASSEMBLE_40M)
-        {
-            if (WLAN_VHT_MCS0 == uc_ref_rate)
-            {
-                if (WLAN_PHY_RATE_12M != pst_dmac_dev->uc_rsp_frm_rate_val)
-                {
-                    pst_dmac_dev->uc_rsp_frm_rate_val = WLAN_PHY_RATE_12M;
-                    hal_set_rsp_rate((oal_uint32)pst_dmac_dev->uc_rsp_frm_rate_val);
-                }
-            }
-            else
-            {
-                /* 响应帧使用24M速率 */
-                if (WLAN_PHY_RATE_24M != pst_dmac_dev->uc_rsp_frm_rate_val)
-                {
-                    pst_dmac_dev->uc_rsp_frm_rate_val = WLAN_PHY_RATE_24M;
-                    hal_set_rsp_rate((oal_uint32)pst_dmac_dev->uc_rsp_frm_rate_val);
-                }
             }
         }
         /* 20M带宽 */

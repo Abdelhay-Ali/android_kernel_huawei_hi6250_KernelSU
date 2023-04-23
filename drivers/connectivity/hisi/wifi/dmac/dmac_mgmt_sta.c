@@ -342,7 +342,7 @@ oal_void  dmac_chan_multi_select_channel_mac(mac_vap_stru *pst_mac_vap, oal_uint
         }
     }
 }
-
+mac_channel_stru g_st_old_channel = {0};    /* vap所在的信道 */
 
 oal_void  dmac_chan_sta_switch_channel(mac_vap_stru *pst_mac_vap)
 {
@@ -350,15 +350,13 @@ oal_void  dmac_chan_sta_switch_channel(mac_vap_stru *pst_mac_vap)
     wlan_bw_cap_enum_uint8              en_bwcap_vap;
     mac_user_stru                      *pst_mac_user;
     dmac_user_stru                     *pst_dmac_user;
-
-    mac_channel_stru                    st_old_channel;    /* vap所在的信道 */
     mac_scan_req_stru                   st_scan_req_params;
 
     if (WLAN_BAND_WIDTH_BUTT != pst_mac_vap->st_ch_switch_info.en_new_bandwidth)
     {
         dmac_chan_adjust_bandwidth_sta(pst_mac_vap, &en_new_bandwidth);
     }
-    oal_memcopy(&st_old_channel, &pst_mac_vap->st_channel, OAL_SIZEOF(st_old_channel));
+    oal_memcopy(&g_st_old_channel, &pst_mac_vap->st_channel, OAL_SIZEOF(g_st_old_channel));
 
     /* 禁止硬件全部发送直到STA信道切换完毕 */
     dmac_chan_disable_machw_tx(pst_mac_vap);
@@ -411,17 +409,23 @@ oal_void  dmac_chan_sta_switch_channel(mac_vap_stru *pst_mac_vap)
         dmac_tx_delete_ba(pst_dmac_user);
     }
 
-    dmac_trigger_csa_scan(&st_scan_req_params, pst_mac_vap, &st_old_channel);
+    dmac_trigger_csa_scan(&st_scan_req_params, pst_mac_vap, &g_st_old_channel);
 }
 
 
 oal_void  dmac_handle_tbtt_chan_mgmt_sta(dmac_vap_stru *pst_dmac_vap)
 {
     mac_vap_stru *pst_mac_vap = &(pst_dmac_vap->st_vap_base_info);
+    mac_scan_req_stru st_scan_req_params;
 
     if ((OAL_FALSE == mac_mib_get_SpectrumManagementImplemented(pst_mac_vap)) || (OAL_TRUE == pst_mac_vap->st_ch_switch_info.bit_bad_ap))
     {
         return;
+    }
+
+    if ((OAL_TRUE == g_csa_scan_flag) && (pst_mac_vap->st_ch_switch_info.uc_new_ch_swt_cnt == 0) &&
+        (OAL_FALSE == pst_mac_vap->st_ch_switch_info.en_channel_swt_cnt_zero)) {
+        dmac_trigger_csa_scan(&st_scan_req_params, pst_mac_vap, &g_st_old_channel);
     }
 
     /* 如果AP发送的CSA IE中的"信道切换计数"为零，则立即切换信道 */

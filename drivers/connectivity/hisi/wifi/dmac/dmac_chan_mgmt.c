@@ -1134,6 +1134,11 @@ oal_uint32  dmac_ie_proc_ch_switch_ie(mac_vap_stru *pst_mac_vap, oal_uint8 *puc_
         return ul_check;
     }
 
+    if (OAL_TRUE == g_csa_scan_flag) {
+        OAM_WARNING_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{dmac_ie_proc_ch_switch_ie::csa_scan not complete.}");
+        return OAL_FAIL;
+    }
+
     /* 第一次收到CSA,并且ap要求在信道切换完成前停止传输 */
     if (OAL_FALSE == pst_mac_vap->st_ch_switch_info.en_waiting_to_shift_channel)
     {

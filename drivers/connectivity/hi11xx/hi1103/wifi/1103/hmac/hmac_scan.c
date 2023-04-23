@@ -1313,6 +1313,16 @@ OAL_STATIC OAL_INLINE oal_void  hmac_scan_update_bss_list_protocol(hmac_vap_stru
 #endif
 
     if (OAL_PTR_NULL !=
+            mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_MARVELL, MAC_WLAN_CHIP_OUI_TYPE_MARVELL, puc_frame_body, us_frame_len))
+    {
+        pst_bss_dscr->en_txbf_blacklist_chip_oui = OAL_TRUE;
+    }
+    else
+    {
+        pst_bss_dscr->en_txbf_blacklist_chip_oui = OAL_FALSE;
+    }
+
+    if (OAL_PTR_NULL !=
             mac_find_vendor_ie_etc(MAC_WLAN_CHIP_OUI_RALINK, MAC_WLAN_CHIP_OUI_TYPE_RALINK, puc_frame_body, us_frame_len))
     {
         pst_bss_dscr->en_is_tplink_oui = WLAN_AP_CHIP_OUI_RALINK;

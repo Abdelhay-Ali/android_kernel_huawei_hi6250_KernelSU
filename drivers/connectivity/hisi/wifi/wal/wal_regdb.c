@@ -1443,7 +1443,7 @@ static const struct ieee80211_regdomain regdom_MY = {
         REG_RULE(5170, 5250, 80, 3, 24, 0),
         REG_RULE(5250, 5330, 80, 0, 24,
             NL80211_RRF_DFS | 0),
-        REG_RULE(5490, 5710, 80, 0, 24,
+        REG_RULE(5490, 5650, 80, 0, 24,
             NL80211_RRF_DFS | 0),
         REG_RULE(5735, 5835, 80, 0, 24, 0),
     },

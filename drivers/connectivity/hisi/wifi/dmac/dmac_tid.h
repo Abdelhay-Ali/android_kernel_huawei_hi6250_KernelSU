@@ -72,6 +72,7 @@ extern oal_void  dmac_tid_flush_retry_frame(mac_device_stru *pst_device, dmac_ti
 extern oal_uint32  dmac_tid_tx_queue_enqueue_head(dmac_tid_stru *pst_tid_queue, oal_dlist_head_stru *pst_tx_dscr_list_hdr, oal_uint8 uc_mpdu_num);
 extern oal_uint32  dmac_tid_clear(mac_user_stru *pst_mac_user, mac_device_stru *pst_mac_device);
 extern oal_uint32  dmac_tid_get_normal_rate_stats(mac_user_stru *pst_mac_user, oal_uint8 uc_tid_id, dmac_tx_normal_rate_stats_stru **ppst_rate_stats_info);
+extern oal_uint32 dmac_clear_tid_by_rm_ptk_key(mac_vap_stru *pst_mac_vap, mac_user_stru *pst_mac_user);
 
 
 

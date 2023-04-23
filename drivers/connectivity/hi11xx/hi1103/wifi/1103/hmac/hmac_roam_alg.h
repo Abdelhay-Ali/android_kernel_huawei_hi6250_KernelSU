@@ -165,6 +165,7 @@ typedef struct
     wlan_nss_enum_uint8             en_cur_num_spatial_stream;
     wlan_nss_enum_uint8             en_avail_bf_num_spatial_stream;
     oal_uint16                      us_cap_info;        /* 旧的bss的能力位信息 */
+    mac_ap_type_enum_uint16         en_ap_type;
 }hmac_roam_old_bss_stru;
 
 #if 0

@@ -23,6 +23,8 @@
 #define DSM_BUCK_PROTECTED                  (909030034)
 #define DSM_1103_HALT                       (909030035)
 #define DSM_WIFI_FEMERROR                   (909030036)
+#define DSM_PCIE_SWITCH_SDIO_FAIL           (909030043)
+#define DSM_PCIE_SWITCH_SDIO_SUCC           (909030044)
 extern void hw_1103_dsm_client_notify(int dsm_id, const char *fmt, ...);
 #endif
 

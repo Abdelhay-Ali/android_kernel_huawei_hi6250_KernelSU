@@ -192,6 +192,17 @@ oal_uint32  wal_scan_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
     return OAL_SUCC;
 }
 
+static oal_void wal_free_asoc_comp_proc_sta_ie_buf(hmac_asoc_rsp_stru *pst_asoc_rsp)
+{
+    if (pst_asoc_rsp->puc_asoc_rsp_ie_buff != NULL) {
+        oal_free(pst_asoc_rsp->puc_asoc_rsp_ie_buff);
+        pst_asoc_rsp->puc_asoc_rsp_ie_buff = NULL;
+    }
+    if (pst_asoc_rsp->puc_asoc_req_ie_buff != NULL) {
+        oal_free(pst_asoc_rsp->puc_asoc_req_ie_buff);
+        pst_asoc_rsp->puc_asoc_req_ie_buff = NULL;
+    }
+}
 
 
 oal_uint32  wal_asoc_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
@@ -216,8 +227,7 @@ oal_uint32  wal_asoc_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
     if (OAL_PTR_NULL == pst_net_device)
     {
         OAM_ERROR_LOG0(pst_event->st_event_hdr.uc_vap_id, OAM_SF_ASSOC, "{wal_asoc_comp_proc_sta::get net device ptr is null!}\r\n");
-        oal_free(pst_asoc_rsp->puc_asoc_rsp_ie_buff);
-        pst_asoc_rsp->puc_asoc_rsp_ie_buff = OAL_PTR_NULL;
+        wal_free_asoc_comp_proc_sta_ie_buf(pst_asoc_rsp);
         return OAL_ERR_CODE_PTR_NULL;
     }
 
@@ -244,8 +254,7 @@ oal_uint32  wal_asoc_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
         {
             OAM_ERROR_LOG0(pst_event->st_event_hdr.uc_vap_id, OAM_SF_ASSOC,
                             "{wal_asoc_comp_proc_sta::get ptr is null!}");
-            oal_free(pst_asoc_rsp->puc_asoc_rsp_ie_buff);
-            pst_asoc_rsp->puc_asoc_rsp_ie_buff = OAL_PTR_NULL;
+            wal_free_asoc_comp_proc_sta_ie_buf(pst_asoc_rsp);
             return OAL_ERR_CODE_PTR_NULL;
         }
         pst_wiphy       = pst_hmac_device->pst_device_base_info->pst_wiphy;
@@ -269,8 +278,7 @@ oal_uint32  wal_asoc_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
         OAM_ERROR_LOG1(pst_event->st_event_hdr.uc_vap_id, OAM_SF_ASSOC, "{wal_asoc_comp_proc_sta::oal_cfg80211_connect_result fail[%d]!}\r\n", ul_ret);
     }
 
-    oal_free(pst_asoc_rsp->puc_asoc_rsp_ie_buff);
-    pst_asoc_rsp->puc_asoc_rsp_ie_buff = OAL_PTR_NULL;
+    wal_free_asoc_comp_proc_sta_ie_buf(pst_asoc_rsp);
 
 #ifdef _PRE_WLAN_FEATURE_11D
     /* 如果关联成功，sta根据AP的国家码设置自己的管制域 */
@@ -297,6 +305,17 @@ oal_uint32  wal_asoc_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
 }
 
 #ifdef _PRE_WLAN_FEATURE_ROAM
+static oal_void wal_free_roam_comp_proc_sta_ie_buf(hmac_roam_rsp_stru *pst_roam_rsp)
+{
+    if (pst_roam_rsp->puc_asoc_rsp_ie_buff != NULL) {
+        oal_free(pst_roam_rsp->puc_asoc_rsp_ie_buff);
+        pst_roam_rsp->puc_asoc_rsp_ie_buff = NULL;
+    }
+    if (pst_roam_rsp->puc_asoc_req_ie_buff != NULL) {
+        oal_free(pst_roam_rsp->puc_asoc_req_ie_buff);
+        pst_roam_rsp->puc_asoc_req_ie_buff = NULL;
+    }
+}
 
 oal_uint32  wal_roam_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
 {
@@ -323,8 +342,7 @@ oal_uint32  wal_roam_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
     if (OAL_PTR_NULL == pst_net_device)
     {
         OAM_ERROR_LOG0(pst_event->st_event_hdr.uc_vap_id, OAM_SF_ROAM, "{wal_asoc_comp_proc_sta::get net device ptr is null!}\r\n");
-        oal_free(pst_roam_rsp->puc_asoc_rsp_ie_buff);
-        pst_roam_rsp->puc_asoc_rsp_ie_buff = OAL_PTR_NULL;
+        wal_free_roam_comp_proc_sta_ie_buf(pst_roam_rsp);
         return OAL_ERR_CODE_PTR_NULL;
     }
     /* 获取device id 指针*/
@@ -332,16 +350,14 @@ oal_uint32  wal_roam_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
     if (OAL_PTR_NULL == pst_mac_device)
     {
        OAM_WARNING_LOG0(pst_event->st_event_hdr.uc_vap_id, OAM_SF_SCAN, "{wal_asoc_comp_proc_sta::pst_mac_device is null ptr!}");
-       oal_free(pst_roam_rsp->puc_asoc_rsp_ie_buff);
-       pst_roam_rsp->puc_asoc_rsp_ie_buff = OAL_PTR_NULL;
+       wal_free_roam_comp_proc_sta_ie_buf(pst_roam_rsp);
        return OAL_ERR_CODE_PTR_NULL;
     }
 
     if (pst_roam_rsp->st_channel.en_band >= WLAN_BAND_BUTT)
     {
         OAM_ERROR_LOG1(pst_event->st_event_hdr.uc_vap_id, OAM_SF_ROAM, "{wal_asoc_comp_proc_sta::unexpected band[%d]!}\r\n", pst_roam_rsp->st_channel.en_band);
-        oal_free(pst_roam_rsp->puc_asoc_rsp_ie_buff);
-        pst_roam_rsp->puc_asoc_rsp_ie_buff = OAL_PTR_NULL;
+        wal_free_roam_comp_proc_sta_ie_buf(pst_roam_rsp);
         return OAL_FAIL;
     }
     if (WLAN_BAND_2G == pst_roam_rsp->st_channel.en_band)
@@ -380,8 +396,7 @@ oal_uint32  wal_roam_comp_proc_sta(frw_event_mem_stru *pst_event_mem)
     OAM_WARNING_LOG4(pst_event->st_event_hdr.uc_vap_id, OAM_SF_ASSOC, "{wal_roam_comp_proc_sta::oal_cfg80211_roamed OK asoc_req_ie[%p] len[%d] asoc_rsp_ie[%p] len[%d]!}\r\n",
                    pst_roam_rsp->puc_asoc_req_ie_buff, pst_roam_rsp->ul_asoc_req_ie_len, pst_roam_rsp->puc_asoc_rsp_ie_buff, pst_roam_rsp->ul_asoc_rsp_ie_len);
 
-    oal_free(pst_roam_rsp->puc_asoc_rsp_ie_buff);
-    pst_roam_rsp->puc_asoc_rsp_ie_buff = OAL_PTR_NULL;
+    wal_free_roam_comp_proc_sta_ie_buf(pst_roam_rsp);
 
     ul_ret = hmac_vap_free_asoc_req_ie_ptr(pst_event->st_event_hdr.uc_vap_id);
     if (OAL_SUCC != ul_ret)

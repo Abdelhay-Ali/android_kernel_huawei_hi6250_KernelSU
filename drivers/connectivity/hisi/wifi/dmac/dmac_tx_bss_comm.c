@@ -2222,6 +2222,23 @@ OAL_STATIC oal_bool_enum_uint8 dmac_frame_is_null_data(oal_netbuf_stru *pst_net_
 }
 #endif
 
+OAL_STATIC oal_uint32 dmac_tx_check_user_state(dmac_vap_stru *pst_dmac_vap, mac_tx_ctl_stru *pst_tx_ctl_first,
+                                               dmac_user_stru *pst_dmac_user)
+{
+#ifdef _PRE_WLAN_FEATURE_ROAM
+    /* 非漫游状态port关闭的时候只有eapol能发送,漫游状态帧继续发送入tid队列 */
+    if (pst_dmac_vap->st_vap_base_info.en_vap_state != MAC_VAP_STATE_ROAMING &&
+        mac_user_get_port(&(pst_dmac_user->st_user_base_info)) == OAL_FALSE &&
+        MAC_GET_CB_IS_EAPOL(pst_tx_ctl_first) == OAL_FALSE &&
+        dmac_is_al_tx(pst_dmac_vap) != OAL_TRUE) {
+        OAM_WARNING_LOG1(pst_dmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_TX,
+            "{dmac_tx_check_state::port not valid.user idx [%d]}", MAC_GET_CB_TX_USER_IDX(pst_tx_ctl_first));
+        return OAL_ERR_CODE_SECURITY_PORT_INVALID;
+    }
+#endif
+    return OAL_SUCC;
+}
+
 
 OAL_INLINE oal_uint32  dmac_tx_process_data(hal_to_dmac_device_stru *pst_hal_device, dmac_vap_stru *pst_dmac_vap, oal_netbuf_stru *pst_netbuf)
 {
@@ -2273,6 +2290,11 @@ OAL_INLINE oal_uint32  dmac_tx_process_data(hal_to_dmac_device_stru *pst_hal_dev
             dmac_tx_excp_free_netbuf(pst_netbuf);
             return OAL_SUCC;
         }
+    }
+
+    ul_ret = dmac_tx_check_user_state(pst_dmac_vap, pst_tx_ctl_first, pst_dmac_user);
+    if (ul_ret != OAL_SUCC) {
+        return ul_ret;
     }
 
     /* 非活跃用户处理 */
@@ -2692,7 +2714,8 @@ oal_uint32  dmac_tx_process_data_event(frw_event_mem_stru *pst_event_mem)
 
         /* 漫游状态时，强制发送该数据帧 */
 #ifdef _PRE_WLAN_FEATURE_ROAM
-        if (MAC_VAP_STATE_ROAMING == pst_dmac_vap->st_vap_base_info.en_vap_state)
+        if (pst_dmac_vap->st_vap_base_info.en_vap_state == MAC_VAP_STATE_ROAMING &&
+            MAC_GET_CB_IS_EAPOL(pst_tx_ctl) == OAL_TRUE)
         {
             OAM_WARNING_LOG2(0, OAM_SF_TX, "{dmac_tx_process_data_event::dmac_tx_process_data statel[%d] len[%d].}", pst_dmac_vap->st_vap_base_info.en_vap_state, pst_tx_event->us_frame_len);
             ul_ret = dmac_tx_force(pst_dmac_vap, pst_netbuf, pst_tx_event->us_frame_len, 0);
@@ -3855,7 +3878,7 @@ oal_uint32  dmac_tid_tx_queue_remove_ampdu(
     pst_tid_stats = pst_tid_queue->pst_tid_stats;
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_tid_stats))
     {
-        OAM_ERROR_LOG0(0, OAM_SF_TX, "{dmac_tid_tx_queue_remove::tid_stats is null.}");
+        OAM_ERROR_LOG0(0, OAM_SF_TX, "{dmac_tid_tx_queue_remove_ampdu::tid_stats is null.}");
         return OAL_ERR_CODE_PTR_NULL;
     }
 #endif

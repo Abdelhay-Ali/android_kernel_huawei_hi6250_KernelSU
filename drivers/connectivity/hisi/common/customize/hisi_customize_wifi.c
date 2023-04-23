@@ -314,6 +314,8 @@ OAL_STATIC wlan_cfg_cmd g_ast_wifi_config_dts[] =
 
     /* 修复边带发送功率定制化参数 */
     {"band_edge_limit_txpwr_fix",                            WLAN_CFG_DTS_BAND_EDGE_LIMIT_TXPWR_FIX},
+    /* 5G IQ 校准还回幅度增益调整 */
+    {"5g_iq_cali_agc_control",                               WLAN_CFG_DTS_5G_IQ_CALI_AGC_CONTROL},
 
     {OAL_PTR_NULL, 0}
 };
@@ -534,6 +536,8 @@ OAL_STATIC oal_void original_value_for_dts_params(oal_void)
     g_al_dts_params[WLAN_CFG_DTS_BT_CALI_TXPWR_PA_FRE7]                 = 76;
     g_al_dts_params[WLAN_CFG_DTS_BT_CALI_TXPWR_PA_FRE8]                 = 78;
     g_al_dts_params[WLAN_CFG_DTS_BT_CALI_TONE_AMP_GRADE]                = 2;
+    /* 5G IQ 校准还回幅度增益调整 */
+    g_al_dts_params[WLAN_CFG_DTS_5G_IQ_CALI_AGC_CONTROL]                = 0;
 }
 
 OAL_STATIC oal_void host_params_init_first(oal_void)

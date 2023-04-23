@@ -214,7 +214,7 @@ OAL_STATIC oal_uint32  wal_config_set_bw(mac_vap_stru *pst_mac_vap, oal_uint16 u
 OAL_STATIC oal_uint32 wal_config_always_tx_1102(mac_vap_stru * pst_mac_vap, oal_uint16 us_len, oal_uint8 * puc_param);
 #endif
 OAL_STATIC oal_uint32  wal_config_always_rx(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
-OAL_STATIC oal_uint32  wal_config_pcie_pm_level(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
+OAL_STATIC oal_uint32  wal_config_rx_filter_frag(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 OAL_STATIC oal_uint32  wal_config_reg_info(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 
 #if (defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST))
@@ -468,7 +468,7 @@ OAL_STATIC OAL_CONST wal_wid_op_stru g_ast_board_wid_op[] =
     {WLAN_CFGID_SET_ALWAYS_TX_1102,     OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_always_tx_1102},
 #endif
     {WLAN_CFGID_SET_ALWAYS_RX,          OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_always_rx},
-    {WLAN_CFGID_PCIE_PM_LEVEL,          OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_pcie_pm_level},
+    {WLAN_CFGID_RX_FILTER_FRAG,         OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_rx_filter_frag},
 
     {WLAN_CFGID_REG_INFO,               OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_reg_info},
 #if (defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST))
@@ -1625,20 +1625,20 @@ OAL_STATIC oal_uint32  wal_config_always_rx(mac_vap_stru *pst_mac_vap, oal_uint1
 }
 
 
-OAL_STATIC oal_uint32  wal_config_pcie_pm_level(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
+OAL_STATIC oal_uint32  wal_config_rx_filter_frag(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
 {
     oal_uint32                      ul_ret;
 
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mac_vap || OAL_PTR_NULL == puc_param))
     {
-        OAM_WARNING_LOG0(0, OAM_SF_ANY, "{wal_config_pcie_pm_level::pst_mac_vap/puc_param is null ptr!}\r\n");
+        OAM_WARNING_LOG0(0, OAM_SF_ANY, "{wal_config_rx_filter_frag::pst_mac_vap/puc_param is null ptr!}\r\n");
         return OAL_ERR_CODE_PTR_NULL;
     }
 
-    ul_ret = hmac_config_pcie_pm_level(pst_mac_vap, us_len, puc_param);
+    ul_ret = hmac_config_rx_filter_frag(pst_mac_vap, us_len, puc_param);
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{wal_config_pcie_pm_level::hmac_config_set_freq_skew failed!}\r\n");
+        OAM_WARNING_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{wal_config_rx_filter_frag::hmac_config_set_freq_skew failed!}\r\n");
         return ul_ret;
     }
 
@@ -2249,6 +2249,11 @@ oal_int32  wal_recv_config_cmd(oal_uint8 *puc_buf, oal_uint16 us_len)
     {
         OAM_ERROR_LOG0(0, OAM_SF_ANY, "{wal_recv_config_cmd::OAL_NET_DEV_PRIV(pst_net_dev) is null ptr.}\r\n");
         return OAL_ERR_CODE_PTR_NULL;
+    }
+
+    if (us_msg_size < OAL_IF_NAME_SIZE) { // 确保大于0为合法值，防止减下溢，导致后续申请内存以及拷贝发生堆溢出
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "{wal_recv_config_cmd_etc::msg_size[%d] overrun!}", us_msg_size);
+        return OAL_FAIL;
     }
 
     us_msg_size -= OAL_IF_NAME_SIZE;

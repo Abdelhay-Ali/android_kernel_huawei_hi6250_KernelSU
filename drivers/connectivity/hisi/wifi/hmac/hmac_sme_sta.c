@@ -1076,21 +1076,35 @@ oal_void hmac_report_connect_failed_result(hmac_vap_stru *pst_hmac_vap, mac_stat
     frw_event_mem_stru  *pst_event_mem;
     frw_event_stru      *pst_event;
     hmac_asoc_rsp_stru   st_asoc_rsp;
+    oal_uint8           *mgmt_data = NULL;
+    oal_uint32           ret;
+
+    if (pst_hmac_vap->ul_asoc_req_ie_len > 0 && pst_hmac_vap->puc_asoc_req_ie_buff != NULL) {
+        mgmt_data = (oal_uint8 *)oal_memalloc(pst_hmac_vap->ul_asoc_req_ie_len);
+        if (mgmt_data == NULL) {
+            OAM_ERROR_LOG1(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
+                "{hmac_report_connect_failed_result::mgmt_data alloc null,size %d.}", pst_hmac_vap->ul_asoc_req_ie_len);
+            return;
+        }
+        oal_memcopy(mgmt_data, (oal_uint8 *)(pst_hmac_vap->puc_asoc_req_ie_buff), pst_hmac_vap->ul_asoc_req_ie_len);
+    }
 
     memset(&st_asoc_rsp, 0 ,sizeof(st_asoc_rsp));
     st_asoc_rsp.en_result_code       = HMAC_MGMT_TIMEOUT;
     st_asoc_rsp.en_status_code       = reason_code;
     /* 扫描超时需要释放对应HMAC VAP下的关联请求buff */
-    st_asoc_rsp.puc_asoc_req_ie_buff = pst_hmac_vap->puc_asoc_req_ie_buff;
+    st_asoc_rsp.puc_asoc_req_ie_buff = mgmt_data;
 
     /* 抛加入完成事件到WAL */
     pst_event_mem = FRW_EVENT_ALLOC(OAL_SIZEOF(hmac_asoc_rsp_stru));
     if (OAL_PTR_NULL == pst_event_mem)
     {
+        if (mgmt_data != NULL) {
+            oal_free(mgmt_data);
+        }
         OAM_ERROR_LOG0(0, OAM_SF_SCAN, "{hmac_report_connect_failed_result::FRW_EVENT_ALLOC fail!}");
         return;
     }
-
     /* 填写事件 */
     pst_event = (frw_event_stru *)pst_event_mem->puc_data;
 
@@ -1106,9 +1120,14 @@ oal_void hmac_report_connect_failed_result(hmac_vap_stru *pst_hmac_vap, mac_stat
     oal_memcopy(frw_get_event_payload(pst_event_mem), &st_asoc_rsp, OAL_SIZEOF(hmac_asoc_rsp_stru));
 
     /* 分发事件 */
-    frw_event_dispatch_event(pst_event_mem);
+    ret = frw_event_dispatch_event(pst_event_mem);
+    if (ret != OAL_SUCC)
+    {
+        if (mgmt_data != NULL) {
+            oal_free(mgmt_data);
+        }
+    }
     FRW_EVENT_FREE(pst_event_mem);
-
 }
 
 
@@ -1189,6 +1208,17 @@ oal_void  hmac_handle_auth_rsp_sta(hmac_vap_stru *pst_hmac_vap, oal_uint8 *puc_m
 
 }
 
+oal_void hmac_handle_free_buff(oal_uint8 *buf1, oal_uint8 *buf2)
+{
+    if (buf1 != NULL) {
+        oal_free(buf1);
+        buf1 = NULL;
+    }
+    if (buf2 != NULL) {
+        oal_free(buf2);
+        buf2 = NULL;
+    }
+}
 
 oal_void  hmac_handle_asoc_rsp_sta(hmac_vap_stru *pst_hmac_vap, oal_uint8 *puc_msg)
 {
@@ -1196,7 +1226,9 @@ oal_void  hmac_handle_asoc_rsp_sta(hmac_vap_stru *pst_hmac_vap, oal_uint8 *puc_m
     frw_event_stru      *pst_event;
     hmac_asoc_rsp_stru  *pst_asoc_rsp = (hmac_asoc_rsp_stru *)puc_msg;
     hmac_user_stru      *pst_hmac_user;
-    oal_uint8           *puc_mgmt_data;
+    oal_uint8           *puc_mgmt_data = NULL;
+    oal_uint8           *puc_mgmt_data_req = NULL;
+    oal_uint32           ret;
 
     if(HMAC_MGMT_SUCCESS == pst_asoc_rsp->en_result_code)
     {
@@ -1219,6 +1251,19 @@ oal_void  hmac_handle_asoc_rsp_sta(hmac_vap_stru *pst_hmac_vap, oal_uint8 *puc_m
         oal_memcopy(puc_mgmt_data, (oal_uint8 *)pst_asoc_rsp->puc_asoc_rsp_ie_buff, pst_asoc_rsp->ul_asoc_rsp_ie_len);
         pst_asoc_rsp->puc_asoc_rsp_ie_buff = puc_mgmt_data;
 
+        if (pst_asoc_rsp->ul_asoc_req_ie_len != 0 && pst_asoc_rsp->puc_asoc_req_ie_buff != NULL) {
+            puc_mgmt_data_req = (oal_uint8 *)oal_memalloc(pst_asoc_rsp->ul_asoc_req_ie_len);
+            if (puc_mgmt_data_req == NULL) {
+                OAM_ERROR_LOG0(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
+                    "{hmac_handle_asoc_rsp_succ_sta::puc_mgmt_data_req alloc null.}");
+                hmac_handle_free_buff(puc_mgmt_data, puc_mgmt_data_req);
+                FRW_EVENT_FREE(pst_event_mem);
+                return;
+            }
+            oal_memcopy(puc_mgmt_data_req, (oal_uint8 *)pst_asoc_rsp->puc_asoc_req_ie_buff, pst_asoc_rsp->ul_asoc_req_ie_len);
+            pst_asoc_rsp->puc_asoc_req_ie_buff = puc_mgmt_data_req;
+        }
+
         /* 填写事件 */
         pst_event = (frw_event_stru *)pst_event_mem->puc_data;
 
@@ -1234,7 +1279,11 @@ oal_void  hmac_handle_asoc_rsp_sta(hmac_vap_stru *pst_hmac_vap, oal_uint8 *puc_m
         oal_memcopy((oal_uint8 *)frw_get_event_payload(pst_event_mem), (oal_uint8 *)puc_msg, OAL_SIZEOF(hmac_asoc_rsp_stru));
 
         /* 分发事件 */
-        frw_event_dispatch_event(pst_event_mem);
+        ret = frw_event_dispatch_event(pst_event_mem);
+        if (ret != OAL_SUCC)
+        {
+            hmac_handle_free_buff(puc_mgmt_data, puc_mgmt_data_req);
+        }
         FRW_EVENT_FREE(pst_event_mem);
     }
     else

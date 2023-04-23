@@ -157,7 +157,7 @@ typedef enum
     WLAN_CFG_DTS_BT_CALI_TONE_AMP_GRADE,
 
     WLAN_CFG_DTS_BAND_EDGE_LIMIT_TXPWR_FIX,    /* FCC 边带信道发送功率修复是否使能 */
-
+    WLAN_CFG_DTS_5G_IQ_CALI_AGC_CONTROL,       /* 5g iq cali agc调整配置:全0默认,全f自适应调整;其他,固定增益调整,LNA高3bit,VGA低5bit */
     WLAN_CFG_DTS_BUTT,
 }WLAN_CFG_DTS;
 

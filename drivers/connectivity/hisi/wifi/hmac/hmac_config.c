@@ -6256,18 +6256,18 @@ oal_uint32  hmac_config_adjust_ppm(mac_vap_stru *pst_mac_vap, oal_uint16 us_len,
 #endif //#ifdef _PRE_DEBUG_MODE
 
 
-oal_uint32  hmac_config_pcie_pm_level(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
+oal_uint32  hmac_config_rx_filter_frag(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
 {
     oal_uint32          ul_ret;
 
     /***************************************************************************
         抛事件到DMAC层, 同步DMAC数据
     ***************************************************************************/
-    ul_ret = hmac_config_send_event(pst_mac_vap, WLAN_CFGID_PCIE_PM_LEVEL, us_len, puc_param);
+    ul_ret = hmac_config_send_event(pst_mac_vap, WLAN_CFGID_RX_FILTER_FRAG, us_len, puc_param);
 
     if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
     {
-        OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "{hmac_config_adjust_ppm::hmac_config_send_event failed[%d].}", ul_ret);
+        OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "{hmac_config_rx_filter_frag::hmac_config_send_event failed[%d].}", ul_ret);
     }
 
     return ul_ret;
@@ -6731,14 +6731,19 @@ oal_uint32  hmac_config_reduce_sar(mac_vap_stru *pst_mac_vap, oal_uint16 us_len,
 
 oal_uint32  hmac_config_get_country(mac_vap_stru *pst_mac_vap, oal_uint16 *pus_len, oal_uint8 *puc_param)
 {
-#if 1
 #if (_PRE_MULTI_CORE_MODE_OFFLOAD_DMAC == _PRE_MULTI_CORE_MODE)
     oal_int8      ac_tmp_buff[OAM_PRINT_FORMAT_LENGTH];
     mac_regdomain_info_stru *pst_regdomain_info                     = OAL_PTR_NULL;
+    mac_cfg_get_country_stru *pst_param;
 
+    pst_param = (mac_cfg_get_country_stru *)puc_param;
 
     mac_get_regdomain_info(&pst_regdomain_info);
 
+    pst_param->ac_country[0] = pst_regdomain_info->ac_country[0];
+    pst_param->ac_country[1] = pst_regdomain_info->ac_country[1];
+    pst_param->ac_country[2] = pst_regdomain_info->ac_country[2];
+    *pus_len = WLAN_COUNTRY_STR_LEN;
     OAL_SPRINTF(ac_tmp_buff, sizeof(ac_tmp_buff), "getcountry code is : %c%c.\n", pst_regdomain_info->ac_country[0], pst_regdomain_info->ac_country[1]);
     oam_print(ac_tmp_buff);
 #else
@@ -6757,7 +6762,6 @@ oal_uint32  hmac_config_get_country(mac_vap_stru *pst_mac_vap, oal_uint16 *pus_l
 
     OAM_INFO_LOG2(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "{hmac_config_get_country::country[0]=%c, country[1]=%c.}",
                   (oal_uint8)pst_param->ac_country[0], (oal_uint8)pst_param->ac_country[1]);
-#endif
 #endif
     OAM_INFO_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_CFG, "hmac_config_get_country");
 
@@ -13999,7 +14003,6 @@ oal_module_symbol(hmac_config_set_freq_skew);
 #ifdef _PRE_DEBUG_MODE
 oal_module_symbol(hmac_config_adjust_ppm);
 #endif //#ifdef _PRE_DEBUG_MODE
-oal_module_symbol(hmac_config_pcie_pm_level);
 oal_module_symbol(hmac_config_delba_req);
 oal_module_symbol(hmac_config_ampdu_end);
 oal_module_symbol(hmac_config_ampdu_start);

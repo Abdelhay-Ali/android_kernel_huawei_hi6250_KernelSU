@@ -478,7 +478,7 @@ extern oal_uint32  mac_user_init(
                 oal_uint8       uc_vap_id);
 
 extern oal_uint32 mac_user_set_port(mac_user_stru *pst_mac_user, oal_bool_enum_uint8 en_port_valid);
-
+extern oal_bool_enum_uint8 mac_user_get_port(mac_user_stru *pst_mac_user);
 extern oal_void mac_user_avail_bf_num_spatial_stream(mac_user_stru *pst_mac_user, oal_uint8 uc_value);
 extern oal_void mac_user_set_avail_num_spatial_stream(mac_user_stru *pst_mac_user, oal_uint8 uc_value);
 extern oal_void mac_user_set_num_spatial_stream(mac_user_stru *pst_mac_user, oal_uint8 uc_value);

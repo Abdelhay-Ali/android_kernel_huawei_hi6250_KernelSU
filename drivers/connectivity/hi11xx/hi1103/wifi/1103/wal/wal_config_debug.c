@@ -469,123 +469,6 @@ OAL_STATIC oal_uint32  wal_config_80m_rts_debug(mac_vap_stru *pst_mac_vap, oal_u
 #endif
 
 
-oal_netbuf_stru*  wal_config_create_packet_ap_etc(oal_uint32    ul_size,
-                                              oal_uint8     uc_tid,
-                                              oal_uint8    *puc_mac_ra,
-                                              oal_uint8    *puc_mac_ta)
-{
-    oal_netbuf_stru         *pst_buf;
-    mac_ether_header_stru   *pst_ether_header;
-    mac_ip_header_stru      *pst_ip;
-    oal_uint32               ul_loop = 0;
-    oal_uint32               l_reserve = 256;
-    pst_buf = oal_netbuf_alloc(ul_size+l_reserve, (oal_int32)l_reserve, 4);
-    if (OAL_UNLIKELY(OAL_PTR_NULL == pst_buf))
-    {
-        return OAL_PTR_NULL;
-    }
-
-    oal_netbuf_put(pst_buf, ul_size);
-    oal_set_mac_addr(&pst_buf->data[0], puc_mac_ra);
-    oal_set_mac_addr(&pst_buf->data[6], puc_mac_ta);
-
-    /* 帧体内容 最后6个字节保持为0x00*/
-    for (ul_loop = 0; ul_loop < ul_size - 20; ul_loop++)
-    {
-        pst_buf->data[14 + ul_loop] = (oal_uint8)ul_loop;
-    }
-
-    pst_ether_header = (mac_ether_header_stru *)oal_netbuf_data(pst_buf);
-
-    /*lint -e778*/
-    pst_ether_header->us_ether_type = OAL_HOST2NET_SHORT(ETHER_TYPE_IP);
-    /*lint +e778*/
-    pst_ip = (mac_ip_header_stru *)(pst_ether_header + 1);      /* 偏移一个以太网头，取ip头 */
-
-    pst_ip->uc_tos = (oal_uint8)(uc_tid << WLAN_IP_PRI_SHIFT);
-
-#ifdef _PRE_WLAN_FEATURE_EDCA_OPT_AP
-    pst_ip->uc_protocol = MAC_UDP_PROTOCAL;
-#endif
-
-    pst_buf->next = OAL_PTR_NULL;
-    pst_buf->prev = OAL_PTR_NULL;
-
-    OAL_MEMZERO(oal_netbuf_cb(pst_buf), OAL_NETBUF_CB_SIZE());
-
-    return pst_buf;
-
-}
-
-
-
-OAL_STATIC oal_uint32  wal_config_packet_xmit(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
-{
-    mac_cfg_mpdu_ampdu_tx_param_stru *pst_ampdu_tx_on_param;
-    oal_uint8                       uc_skb_num;
-    oal_uint8                       uc_skb_idx;
-    oal_netbuf_stru                *pst_netbuf;
-    oal_uint8                       uc_tid;
-    oal_uint16                      us_packet_len;
-    oal_net_device_stru            *pst_dev;
-    oal_netbuf_stru                *past_netbuf[32] = {OAL_PTR_NULL};
-
-    pst_ampdu_tx_on_param = (mac_cfg_mpdu_ampdu_tx_param_stru *)puc_param;
-    uc_skb_num            = pst_ampdu_tx_on_param->uc_packet_num;
-    uc_tid                = pst_ampdu_tx_on_param->uc_tid;
-    us_packet_len         = pst_ampdu_tx_on_param->us_packet_len;
-
-    pst_dev = hmac_vap_get_net_device_etc(pst_mac_vap->uc_vap_id);
-
-    /*为profiling测试修改，只测量xmit时间*/
-    if (uc_skb_num <= 32)
-    {
-        for (uc_skb_idx = 0; uc_skb_idx < uc_skb_num; uc_skb_idx++)
-        {
-            past_netbuf[uc_skb_idx] = wal_config_create_packet_ap_etc(us_packet_len, uc_tid,
-                                                    pst_ampdu_tx_on_param->auc_ra_mac,
-                                                    mac_mib_get_StationID(pst_mac_vap));
-
-        }
-
-        OAM_PROFILING_TX_STATISTIC(OAL_PTR_NULL, OAM_PROFILING_FUNC_CONFIG_XMIT_START);
-
-        for (uc_skb_idx = 0; uc_skb_idx < uc_skb_num; uc_skb_idx++)
-        {
-            #ifdef _PRE_WLAN_FEATURE_SMP_SUPPORT
-                wal_vap_start_xmit(past_netbuf[uc_skb_idx], pst_dev);
-            #else
-                wal_bridge_vap_xmit_etc(past_netbuf[uc_skb_idx], pst_dev);
-            #endif
-        }
-
-        OAM_PROFILING_TX_STATISTIC(OAL_PTR_NULL, OAM_PROFILING_FUNC_CONFIG_XMIT_END);
-
-    }
-    else
-    {
-        for (uc_skb_idx = 0; uc_skb_idx < uc_skb_num; uc_skb_idx++)
-        {
-            pst_netbuf = wal_config_create_packet_ap_etc(us_packet_len, uc_tid,
-                                                    pst_ampdu_tx_on_param->auc_ra_mac,
-                                                    mac_mib_get_StationID(pst_mac_vap));
-            if (OAL_PTR_NULL == pst_netbuf)
-            {
-                OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{wal_config_create_packet_ap_etc:: alloc netbuf failed, skb_idx: %d!}\r\n", uc_skb_idx);
-                continue;
-            }
-#ifdef _PRE_WLAN_FEATURE_SMP_SUPPORT
-            wal_vap_start_xmit(pst_netbuf, pst_dev);
-#else
-            wal_bridge_vap_xmit_etc(pst_netbuf, pst_dev);
-#endif
-        }
-    }
-
-    return OAL_SUCC;
-}
-
-
 OAL_STATIC oal_uint32  wal_config_dump_ba_bitmap(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param)
 {
     return hmac_config_dump_ba_bitmap(pst_mac_vap, us_len, puc_param);
@@ -2587,7 +2470,6 @@ OAL_CONST wal_wid_op_stru g_ast_board_wid_op_debug_etc[] =
     {WLAN_CFGID_AMPDU_TX_ON,            OAL_FALSE,  {0},    wal_config_get_ampdu_tx_on, wal_config_ampdu_tx_on},
     {WLAN_CFGID_AMSDU_TX_ON,            OAL_FALSE,  {0},    wal_config_get_amsdu_tx_on, wal_config_amsdu_tx_on},
     {WLAN_CFGID_SEND_BAR,               OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_send_bar},
-    {WLAN_CFGID_PACKET_XMIT,            OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_packet_xmit},
     {WLAN_CFGID_DUMP_BA_BITMAP,         OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_dump_ba_bitmap},
     {WLAN_CFGID_VAP_PKT_STAT,           OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_vap_pkt_stat},
     {WLAN_CFGID_TIMER_START,            OAL_FALSE,  {0},    OAL_PTR_NULL,            wal_config_timer_start},

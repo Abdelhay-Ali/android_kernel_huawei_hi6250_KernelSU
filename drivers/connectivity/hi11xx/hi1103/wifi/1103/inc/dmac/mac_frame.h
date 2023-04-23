@@ -351,6 +351,7 @@ extern "C" {
                                                 (0x92 == pst_bss_dscr->auc_bssid[2]) && (WLAN_AP_CHIP_OUI_BCM == pst_bss_dscr->en_is_tplink_oui))
 
 #define MAC_IS_FEIXUN_K3(puc_bssid)    ((0x2c == puc_bssid[0]) && (0xb2 == puc_bssid[1]) && (0x1a == puc_bssid[2]))
+#define MAC_IS_LINKSYS(puc_bssid)      ((0x60 == puc_bssid[0]) && (0x38 == puc_bssid[1]) && (0xe0 == puc_bssid[2]))
 
 #define MAC_IS_HAIER_AP(puc_bssid)      ((0x08 == puc_bssid[0]) && (0x10 == puc_bssid[1]) && (0x79 == puc_bssid[2]))
 #define MAC_IS_JCG_AP(puc_bssid)        ((0x04 == puc_bssid[0]) && (0x5f == puc_bssid[1]) && (0xa7 == puc_bssid[2]))
@@ -370,6 +371,8 @@ extern "C" {
 #define MAC_WLAN_CHIP_OUI_TYPE_APPLE_1_2        0x7
 #define MAC_WLAN_CHIP_OUI_APPLE2                0x000393
 #define MAC_WLAN_CHIP_OUI_TYPE_APPLE_2_1        0x1
+#define MAC_WLAN_CHIP_OUI_MARVELL               0x005043
+#define MAC_WLAN_CHIP_OUI_TYPE_MARVELL          0x3
 
 /* p2pœ‡πÿ*/
 /* GO negotiation*/

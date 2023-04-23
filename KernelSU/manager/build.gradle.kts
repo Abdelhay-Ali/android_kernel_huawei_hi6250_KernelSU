@@ -1,46 +1,33 @@
-import com.android.build.api.dsl.ApplicationDefaultConfig
-import com.android.build.api.dsl.CommonExtension
-import com.android.build.gradle.api.AndroidBasePlugin
+import com.android.build.api.dsl.ApplicationExtension
+import com.android.build.gradle.BaseExtension
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.konan.properties.Properties
 import java.io.ByteArrayOutputStream
 
 plugins {
-    alias(libs.plugins.agp.app) apply false
-    alias(libs.plugins.agp.lib) apply false
-    alias(libs.plugins.kotlin) apply false
-    alias(libs.plugins.lsplugin.cmaker)
+    id("com.android.application") apply false
+    id("com.android.library") apply false
+    kotlin("android") apply false
 }
 
-cmaker {
-    default {
-        arguments.addAll(
-            arrayOf(
-                "-DANDROID_STL=c++_static",
-            )
-        )
-        val flags = arrayOf(
-            "-Wno-gnu-string-literal-operator-template",
-            "-Wno-c++2b-extensions",
-        )
-        cFlags.addAll(flags)
-        cppFlags.addAll(flags)
-        abiFilters("arm64-v8a", "x86_64")
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
     }
-    buildTypes {
-        if (it.name == "release") {
-            arguments += "-DDEBUG_SYMBOLS_PATH=${buildDir.absolutePath}/symbols"
-        }
+    dependencies {
+        classpath(kotlin("gradle-plugin", version = "1.7.20"))
     }
 }
 
-val androidMinSdkVersion = 26
-val androidTargetSdkVersion = 33
-val androidCompileSdkVersion = 33
-val androidBuildToolsVersion = "33.0.2"
-val androidCompileNdkVersion = "25.2.9519653"
-val androidSourceCompatibility = JavaVersion.VERSION_17
-val androidTargetCompatibility = JavaVersion.VERSION_17
-val managerVersionCode by extra(getVersionCode())
-val managerVersionName by extra(getVersionName())
+val androidMinSdk = 26
+val androidTargetSdk = 33
+val androidCompileSdk = 33
+val androidBuildToolsVersion = "33.0.1"
+val androidSourceCompatibility = JavaVersion.VERSION_11
+val androidTargetCompatibility = JavaVersion.VERSION_11
+val managerVersionCode = getVersionCode()
+val managerVersionName = getVersionName()
 
 tasks.register<Delete>("clean") {
     delete(rootProject.buildDir)
@@ -74,31 +61,71 @@ fun getVersionName(): String {
     return getGitDescribe()
 }
 
-subprojects {
-    plugins.withType(AndroidBasePlugin::class.java) {
-        extensions.configure(CommonExtension::class.java) {
-            compileSdk = androidCompileSdkVersion
-            ndkVersion = androidCompileNdkVersion
-            buildToolsVersion = androidBuildToolsVersion
+fun Project.configureBaseExtension() {
+    extensions.findByType<BaseExtension>()?.run {
+        compileSdkVersion(androidCompileSdk)
+        buildToolsVersion = androidBuildToolsVersion
 
-            defaultConfig {
-                minSdk = androidMinSdkVersion
-                if (this is ApplicationDefaultConfig) {
-                    targetSdk = androidTargetSdkVersion
-                    versionCode = managerVersionCode
-                    versionName = managerVersionName
-                }
+        defaultConfig {
+            minSdk = androidMinSdk
+            targetSdk = androidTargetSdk
+            versionCode = managerVersionCode
+            versionName = managerVersionName
+
+            consumerProguardFiles("proguard-rules.pro")
+        }
+
+        val signFile = rootProject.file("sign.properties")
+        val config = if (signFile.canRead()) {
+            val prop = Properties()
+            prop.load(signFile.inputStream())
+            signingConfigs.create("config") {
+                storeFile = file(prop.getProperty("KEYSTORE_FILE"))
+                storePassword = prop.getProperty("KEYSTORE_PASSWORD")
+                keyAlias = prop.getProperty("KEY_ALIAS")
+                keyPassword = prop.getProperty("KEY_PASSWORD")
+            }
+        } else {
+            signingConfigs["debug"]
+        }
+
+        buildTypes {
+            all {
+                signingConfig = config
             }
 
-            lint {
-                abortOnError = true
-                checkReleaseBuilds = false
-            }
-
-            compileOptions {
-                sourceCompatibility = androidSourceCompatibility
-                targetCompatibility = androidTargetCompatibility
+            named("release") {
+                isMinifyEnabled = true
+                proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             }
         }
+
+        compileOptions {
+            sourceCompatibility = androidSourceCompatibility
+            targetCompatibility = androidTargetCompatibility
+        }
+
+        extensions.findByType<ApplicationExtension>()?.run {
+            buildTypes {
+                named("release") {
+                    isShrinkResources = true
+                }
+            }
+        }
+
+        extensions.findByType<KotlinCompile>()?.run {
+            kotlinOptions {
+                jvmTarget = "11"
+            }
+        }
+    }
+}
+
+subprojects {
+    plugins.withId("com.android.application") {
+        configureBaseExtension()
+    }
+    plugins.withId("com.android.library") {
+        configureBaseExtension()
     }
 }

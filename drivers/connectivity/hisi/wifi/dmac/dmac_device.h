@@ -118,6 +118,7 @@ OAL_STATIC OAL_INLINE mac_fcs_mgr_stru* dmac_fcs_get_mgr_stru(mac_device_stru *p
 #endif
 }
 
+extern oal_bool_enum_uint8 g_rx_filter_frag;
 
 /*****************************************************************************
   10 º¯ÊýÉùÃ÷

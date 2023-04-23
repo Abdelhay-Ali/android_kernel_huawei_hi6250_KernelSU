@@ -453,6 +453,8 @@ OAL_STATIC oal_uint32  dmac_scan_check_bss_type(oal_uint8 *puc_frame_body, mac_s
     return OAL_SUCC;
 }
 
+#define DMAC_CSA_RSP_TIMEOUT 120000
+frw_timeout_stru g_csa_stop_timer = {0};
 #ifdef _PRE_WLAN_FEATURE_20_40_80_COEXIST
 
 oal_void  dmac_scan_check_assoc_ap_channel(dmac_vap_stru *pst_dmac_vap, mac_device_stru *pst_mac_device, oal_netbuf_stru *pst_netbuf)
@@ -469,6 +471,7 @@ oal_void  dmac_scan_check_assoc_ap_channel(dmac_vap_stru *pst_dmac_vap, mac_devi
     oal_uint8                               *puc_ssid;
     oal_uint32                              ul_ret;
     oal_uint8                               uc_idx;
+    mac_scan_req_stru                       *pst_scan_params = &(pst_mac_device->st_scan_params);
 
     pst_rx_ctrl = (dmac_rx_ctl_stru *)oal_netbuf_cb(pst_netbuf);
 
@@ -489,9 +492,21 @@ oal_void  dmac_scan_check_assoc_ap_channel(dmac_vap_stru *pst_dmac_vap, mac_devi
                 uc_frame_channel = mac_ie_get_chan_num(puc_frame_body, (us_frame_len - MAC_80211_FRAME_LEN),
                                    us_offset, pst_rx_ctrl->st_rx_info.uc_channel_number);
 
-                if ((pst_dmac_vap->st_vap_base_info.st_channel.uc_chan_number != uc_frame_channel)
-                    && (0 != uc_frame_channel))
+                if (((pst_dmac_vap->st_vap_base_info.st_channel.uc_chan_number != uc_frame_channel &&
+                    pst_scan_params->en_scan_mode != WLAN_SCAN_MODE_BACKGROUND_CSA) ||
+                    (g_st_old_channel.uc_chan_number == pst_rx_ctrl->st_rx_info.uc_channel_number &&
+                    pst_scan_params->en_scan_mode == WLAN_SCAN_MODE_BACKGROUND_CSA)) && (0 != uc_frame_channel))
                 {
+                    if (pst_scan_params->en_scan_mode == WLAN_SCAN_MODE_BACKGROUND_CSA) {
+                        // 原信道收到AP响应帧认为是攻击场景，两分钟内不做CSA响应
+                        pst_dmac_vap->st_vap_base_info.st_ch_switch_info.uc_switch_fail = OAL_TRUE;
+                        if (!g_csa_stop_timer.en_is_registerd) {
+                            FRW_TIMER_CREATE_TIMER(&g_csa_stop_timer, dmac_sta_csa_stop_timeout_fn,
+                                DMAC_CSA_RSP_TIMEOUT, (void *)pst_dmac_vap, OAL_FALSE,
+                                OAM_MODULE_ID_DMAC, pst_dmac_vap->st_vap_base_info.ul_core_id);
+                        }
+                        uc_frame_channel = pst_rx_ctrl->st_rx_info.uc_channel_number;
+                    }
                     /* AP热点不可能变更频段,只关注信道 */
                     ul_ret = mac_get_channel_idx_from_num(pst_dmac_vap->st_vap_base_info.st_channel.en_band, uc_frame_channel, &uc_idx);
                     if (OAL_SUCC != ul_ret)
@@ -1776,6 +1791,7 @@ oal_void dmac_scan_start_obss_timer(mac_vap_stru *pst_mac_vap)
 
     return;
 }
+oal_uint8 g_csa_scan_flag = OAL_FALSE;
 
 oal_uint32 dmac_trigger_csa_scan(mac_scan_req_stru  *pst_scan_params,
                                        mac_vap_stru      *pst_mac_vap,
@@ -1875,6 +1891,7 @@ oal_uint32 dmac_trigger_csa_scan(mac_scan_req_stru  *pst_scan_params,
         return OAL_FAIL;
     }
 
+    g_csa_scan_flag = OAL_TRUE;
     dmac_scan_handle_scan_req_entry(pst_mac_device, pst_dmac_vap, pst_scan_params);
 
     return OAL_SUCC;
@@ -2806,6 +2823,7 @@ oal_void dmac_scan_end(mac_device_stru *pst_mac_device)
         }
         case WLAN_SCAN_MODE_BACKGROUND_CSA:
         {
+            g_csa_scan_flag = OAL_FALSE;
             OAM_WARNING_LOG0(0, OAM_SF_SCAN, "{dmac_scan_end::scan_mode BACKGROUND_CSA}");
             break;
         }
@@ -3330,6 +3348,18 @@ oal_uint32 dmac_scan_exit(mac_device_stru *pst_device)
     return OAL_SUCC;
 }
 
+oal_uint32 dmac_sta_csa_stop_timeout_fn(void *arg)
+{
+    dmac_vap_stru *dmac_vap = (dmac_vap_stru *)(arg);
+    if (dmac_vap->st_vap_base_info.en_vap_state == MAC_VAP_STATE_BUTT) {
+        return OAL_SUCC;
+    }
+    OAM_WARNING_LOG0(dmac_vap->st_vap_base_info.uc_vap_id, 0, "{dmac_sta_csa_stop_timeout_fn::timer timeout!}");
+    dmac_vap->st_vap_base_info.st_ch_switch_info.uc_switch_fail = OAL_FALSE;
+    FRW_TIMER_DESTROY_TIMER(&g_csa_stop_timer);
+
+    return OAL_SUCC;
+}
 
 /*lint -e19 */
 

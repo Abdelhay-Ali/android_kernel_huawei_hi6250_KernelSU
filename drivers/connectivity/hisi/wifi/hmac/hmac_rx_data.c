@@ -207,6 +207,11 @@ OAL_STATIC OAL_INLINE oal_void  hmac_rx_frame_80211_to_eth(
     mac_llc_snap_stru                  *pst_snap;
     oal_uint16                          us_ether_type;
 
+    if (OAL_UNLIKELY(OAL_NETBUF_LEN(pst_netbuf) < sizeof(mac_llc_snap_stru))) {
+        OAM_WARNING_LOG1(0, OAM_SF_RX, "hmac_rx_frame_80211_to_eth::netbuf len[%d]", OAL_NETBUF_LEN(pst_netbuf));
+        return;
+    }
+
     pst_snap = (mac_llc_snap_stru *)oal_netbuf_data(pst_netbuf);
     us_ether_type = pst_snap->us_ether_type;
 
@@ -378,6 +383,19 @@ OAL_STATIC oal_void  hmac_rx_clear_amsdu_last_netbuf_pointer(oal_netbuf_stru *ps
     }
 }
 
+OAL_STATIC oal_uint32 hmac_rx_amsdu_is_first_sub_msdu_valid(dmac_msdu_proc_state_stru *msdu_state,
+    oal_uint8 *dst_addr, oal_uint8 dst_addr_len)
+{
+    oal_uint8 mac_addr_snap_header[WLAN_MAC_ADDR_LEN] = {0xAA, 0xAA, 0x03, 0x00, 0x00, 0x00};
+    if (!msdu_state->is_first_buffer) {
+        return OAL_SUCC;
+    }
+    if (oal_memcmp(dst_addr, mac_addr_snap_header, WLAN_MAC_ADDR_LEN) == 0) {
+        return OAL_FAIL;
+    }
+    return OAL_SUCC;
+}
+
 
 oal_uint32  hmac_rx_parse_amsdu(
                 oal_netbuf_stru                    *pst_netbuf,
@@ -412,6 +430,7 @@ oal_uint32  hmac_rx_parse_amsdu(
         pst_msdu_state->uc_netbuf_nums_in_mpdu = pst_rx_ctrl->st_rx_info.bit_buff_nums;
         pst_msdu_state->uc_msdu_nums_in_netbuf = pst_rx_ctrl->st_rx_info.uc_msdu_in_buffer;
         pst_msdu_state->us_submsdu_offset      = 0;
+        pst_msdu_state->is_first_buffer        = pst_rx_ctrl->st_rx_info.bit_is_first_buffer;
     }
 
     /* 获取submsdu的头指针 */
@@ -424,6 +443,14 @@ oal_uint32  hmac_rx_parse_amsdu(
     mac_get_submsdu_pad_len(MAC_SUBMSDU_HEADER_LEN + us_submsdu_len, &uc_submsdu_pad_len);
     oal_set_mac_addr(pst_msdu->auc_sa, (puc_submsdu_hdr + MAC_SUBMSDU_SA_OFFSET));
     oal_set_mac_addr(pst_msdu->auc_da, (puc_submsdu_hdr + MAC_SUBMSDU_DA_OFFSET));
+    if (hmac_rx_amsdu_is_first_sub_msdu_valid(pst_msdu_state, pst_msdu->auc_da, WLAN_MAC_ADDR_LEN) != OAL_SUCC) {
+        /* 过滤A-MSDU首帧中DA=AA-AA-03-00-00-00的异常数据 */
+        OAM_WARNING_LOG0(0, OAM_SF_RX, "{hmac_rx_parse_amsdu::msdu da is snap llc header!.}");
+        *pen_proc_state = MAC_PROC_ERROR;
+        hmac_rx_free_amsdu_netbuf(pst_msdu_state->pst_curr_netbuf);
+        return OAL_FAIL;
+    }
+    pst_msdu_state->is_first_buffer = OAL_FALSE;
 
     /* 针对当前的netbuf，申请新的subnetbuf，并设置对应的netbuf的信息，赋值给对应的msdu */
     pst_msdu->pst_netbuf = OAL_MEM_NETBUF_ALLOC(OAL_NORMAL_NETBUF, (MAC_SUBMSDU_HEADER_LEN + us_submsdu_len + uc_submsdu_pad_len), OAL_NETBUF_PRIORITY_MID);
@@ -813,28 +840,64 @@ OAL_STATIC oal_void  hmac_pkt_mem_opt_rx_pkts_stat(hmac_vap_stru *pst_vap, oal_i
 #endif
 
 #ifdef _PRE_WLAN_WAKEUP_SRC_PARSE
+static void hmac_parse_ipv4_packet_ipprot_udp(const struct iphdr *iph, oal_uint32 iphdr_len, oal_uint32 netbuf_len)
+{
+    struct udphdr *uh = NULL;
+    if (netbuf_len < iphdr_len + sizeof(struct udphdr)) {
+        OAM_ERROR_LOG2(0, OAM_SF_M2U, "{ipv4::netbuf_len[%d], protocol[%d]}", netbuf_len, iph->protocol);
+        return;
+    }
+    uh = (struct udphdr *)((uint8_t *)iph + iphdr_len);
+    OAL_IO_PRINT(WIFI_WAKESRC_TAG "UDP packet, src port:%d, dst port:%d.\n",
+        OAL_NTOH_16(uh->source), OAL_NTOH_16(uh->dest));
+}
 
-OAL_STATIC oal_void hmac_parse_ipv4_packet(oal_void *pst_eth)
+static void hmac_parse_ipv4_packet_ipprot_tcp(const struct iphdr *iph, oal_uint32 iphdr_len, oal_uint32 netbuf_len)
+{
+    struct tcphdr *th = NULL;
+    if (netbuf_len < iphdr_len + sizeof(struct tcphdr)) {
+        OAM_ERROR_LOG2(0, OAM_SF_M2U, "{ipv4::netbuf_len[%d], protocol[%d]}", netbuf_len, iph->protocol);
+        return;
+    }
+    th = (struct tcphdr *)((uint8_t *)iph + iphdr_len);
+    OAL_IO_PRINT(WIFI_WAKESRC_TAG "TCP packet, src port:%d, dst port:%d.\n",
+        OAL_NTOH_16(th->source), OAL_NTOH_16(th->dest));
+}
+
+static void hmac_parse_ipv4_packet_ipprot_icmp(const struct iphdr *iph, oal_uint32 iphdr_len, oal_uint32 netbuf_len)
+{
+    struct icmphdr *icmph = NULL;
+    if (netbuf_len < iphdr_len + sizeof(struct icmphdr)) {
+        OAM_ERROR_LOG2(0, OAM_SF_M2U, "{ipv4::netbuf_len[%d], protocol[%d]}", netbuf_len, iph->protocol);
+        return;
+    }
+    icmph = (struct icmphdr *)((uint8_t *)iph + iphdr_len);
+    OAL_IO_PRINT(WIFI_WAKESRC_TAG "ICMP packet, type(%d):%s, code:%d.\n", icmph->type,
+        ((icmph->type == 0) ? "ping reply" : ((icmph->type == 8) ? "ping request" : "other icmp pkt")), icmph->code);
+}
+
+
+OAL_STATIC oal_void hmac_parse_ipv4_packet(oal_void *pst_eth, oal_uint32 netbuf_len)
 {
     const struct iphdr *iph;
     oal_uint32 iphdr_len = 0;
-    struct tcphdr *th;
-    struct udphdr *uh;
-    struct icmphdr *icmph;
+
+    /* iphdr: 最小长度为 20 */
+    if (netbuf_len < 20) {
+        OAM_ERROR_LOG1(0, OAM_SF_M2U, "{hmac_parse_ipv4_packet::netbuf_len[%d]}", netbuf_len);
+        return;
+    }
 
     iph = (struct iphdr *)((mac_ether_header_stru *)pst_eth + 1);
     iphdr_len = iph->ihl*4;
 
     OAL_IO_PRINT(WIFI_WAKESRC_TAG"ipv4 packet. src ip:%d.x.x.%d, dst ip:%d.x.x.%d\n", IPADDR(iph->saddr), IPADDR(iph->daddr));
     if (iph->protocol == IPPROTO_UDP){
-        uh = (struct udphdr *)((oal_uint8*)iph + iphdr_len);
-        OAL_IO_PRINT(WIFI_WAKESRC_TAG"UDP packet, src port:%d, dst port:%d.\n", OAL_NTOH_16(uh->source), OAL_NTOH_16(uh->dest));
+        hmac_parse_ipv4_packet_ipprot_udp(iph, iphdr_len, netbuf_len);
     }else if(iph->protocol == IPPROTO_TCP){
-        th = (struct tcphdr *)((oal_uint8*)iph + iphdr_len);
-        OAL_IO_PRINT(WIFI_WAKESRC_TAG"TCP packet, src port:%d, dst port:%d.\n", OAL_NTOH_16(th->source), OAL_NTOH_16(th->dest));
+        hmac_parse_ipv4_packet_ipprot_tcp(iph, iphdr_len, netbuf_len);
     }else if(iph->protocol == IPPROTO_ICMP){
-        icmph = (struct icmphdr *)((oal_uint8*)iph + iphdr_len);
-        OAL_IO_PRINT(WIFI_WAKESRC_TAG"ICMP packet, type(%d):%s, code:%d.\n", icmph->type, ((icmph->type == 0)?"ping reply":((icmph->type == 8)?"ping request":"other icmp pkt")), icmph->code);
+        hmac_parse_ipv4_packet_ipprot_icmp(iph, iphdr_len, netbuf_len);
     }else if(iph->protocol == IPPROTO_IGMP){
         OAL_IO_PRINT(WIFI_WAKESRC_TAG"IGMP packet.\n");
     }else{
@@ -846,30 +909,43 @@ OAL_STATIC oal_void hmac_parse_ipv4_packet(oal_void *pst_eth)
 
 
 
-OAL_STATIC oal_void hmac_parse_ipv6_packet(oal_void *pst_eth)
+OAL_STATIC oal_void hmac_parse_ipv6_packet(oal_void *pst_eth, oal_uint32 buf_len)
 {
     struct ipv6hdr *ipv6h;
+    oal_icmp6hdr_stru *icmph;
+    if (buf_len < sizeof(struct ipv6hdr)) {
+        OAM_ERROR_LOG2(0, OAM_SF_ANY, "{hmac_parse_ipv6_packet::buf_len[%d], ipv6hdr[%d]}", buf_len, sizeof(struct ipv6hdr));
+        return;
+    }
+    buf_len -= sizeof(struct ipv6hdr);
 
     ipv6h = (struct ipv6hdr *)((mac_ether_header_stru *)pst_eth + 1);
     OAL_IO_PRINT(WIFI_WAKESRC_TAG"ipv6 packet. version: %d, payload length: %d, nh->nexthdr: %d. \n", ipv6h->version, OAL_NTOH_16(ipv6h->payload_len), ipv6h->nexthdr);
     OAL_IO_PRINT(WIFI_WAKESRC_TAG"ipv6 src addr:%04x:x:x:x:x:x:x:%04x, dst addr:%04x:x:x:x:x:x:x:%04x \n",IPADDR6(ipv6h->saddr), IPADDR6(ipv6h->daddr));
     if(OAL_IPPROTO_ICMPV6==ipv6h->nexthdr)
     {
-        oal_nd_msg_stru  *pst_rx_nd_hdr;
-        pst_rx_nd_hdr   = (oal_nd_msg_stru *)(ipv6h + 1);
-        OAL_IO_PRINT(WIFI_WAKESRC_TAG"ipv6 nd type: %d. \n", pst_rx_nd_hdr->icmph.icmp6_type);
+        if (buf_len < sizeof(oal_icmp6hdr_stru)) {
+            OAM_ERROR_LOG2(0, OAM_SF_ANY, "{hmac_parse_ipv6_packet::buf_len[%d] icmp6hdr[%d]}", buf_len, sizeof(oal_icmp6hdr_stru));
+            return;
+        }
+        icmph = (oal_icmp6hdr_stru *)(ipv6h + 1);;
+        OAL_IO_PRINT(WIFI_WAKESRC_TAG"ipv6 nd type: %d. \n", icmph->icmp6_type);
     }
 
     return;
 }
 
 
-OAL_STATIC oal_void hmac_parse_arp_packet(oal_void *pst_eth)
+OAL_STATIC oal_void hmac_parse_arp_packet(oal_void *pst_eth, oal_uint32 buf_len)
 {
     const struct iphdr *iph;
     int iphdr_len = 0;
     struct arphdr *arp;
 
+    if (buf_len < sizeof(struct iphdr) + sizeof(struct arphdr)) {
+        OAM_ERROR_LOG1(0, 0, "{hmac_parse_arp_packet::iphdr&arphdr[%d].}", buf_len);
+        return;
+    }
     iph = (struct iphdr *)((mac_ether_header_stru *)pst_eth + 1);
     iphdr_len = iph->ihl*4;
     arp = (struct arphdr *)((oal_uint8*)iph + iphdr_len);
@@ -880,10 +956,13 @@ OAL_STATIC oal_void hmac_parse_arp_packet(oal_void *pst_eth)
 }
 
 
-OAL_STATIC oal_void  hmac_parse_8021x_packet(oal_void *pst_eth)
+OAL_STATIC oal_void  hmac_parse_8021x_packet(oal_void *pst_eth, oal_uint32 buf_len)
 {
     struct ieee8021x_hdr *hdr = (struct ieee8021x_hdr *)((mac_ether_header_stru *)pst_eth + 1);
-
+    if (buf_len < sizeof(struct ieee8021x_hdr)) {
+        OAM_ERROR_LOG1(0, 0, "{hmac_parse_packet::buf_len}", buf_len);
+        return;
+    }
     OAL_IO_PRINT(WIFI_WAKESRC_TAG"802.1x frame: version:%d, type:%d, length:%d\n", hdr->version, hdr->type, OAL_NTOH_16(hdr->length));
 
     return;
@@ -895,7 +974,14 @@ oal_void hmac_parse_packet(oal_netbuf_stru *pst_netbuf_eth)
 {
     oal_uint16 us_type;
     mac_ether_header_stru  *pst_ether_hdr;
+    oal_uint32 buf_len;
 
+    buf_len = OAL_NETBUF_LEN(pst_netbuf_eth);
+    if (buf_len < sizeof(mac_ether_header_stru)) {
+        OAM_ERROR_LOG1(0, 0, "{hmac_parse_packet::buf_len}", buf_len);
+        return;
+    }
+    buf_len -= sizeof(mac_ether_header_stru);
     pst_ether_hdr = (mac_ether_header_stru *)oal_netbuf_data(pst_netbuf_eth);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_ether_hdr))
     {
@@ -906,13 +992,13 @@ oal_void hmac_parse_packet(oal_netbuf_stru *pst_netbuf_eth)
     us_type = pst_ether_hdr->us_ether_type;
 
     if(us_type == OAL_HOST2NET_SHORT(ETHER_TYPE_IP)){
-        hmac_parse_ipv4_packet((oal_void*)pst_ether_hdr);
+        hmac_parse_ipv4_packet((oal_void*)pst_ether_hdr, buf_len);
     }else if (us_type == OAL_HOST2NET_SHORT(ETHER_TYPE_IPV6)){
-        hmac_parse_ipv6_packet((oal_void*)pst_ether_hdr);
+        hmac_parse_ipv6_packet((oal_void*)pst_ether_hdr, buf_len);
     }else if(us_type == OAL_HOST2NET_SHORT(ETHER_TYPE_ARP)){
-        hmac_parse_arp_packet((oal_void*)pst_ether_hdr);
+        hmac_parse_arp_packet((oal_void*)pst_ether_hdr, buf_len);
     }else if(us_type == OAL_HOST2NET_SHORT(ETHER_TYPE_PAE)){
-        hmac_parse_8021x_packet((oal_void*)pst_ether_hdr);
+        hmac_parse_8021x_packet((oal_void*)pst_ether_hdr, buf_len);
     }else{
         OAL_IO_PRINT(WIFI_WAKESRC_TAG"receive protocol type:0x%04x\n", OAL_NTOH_16(us_type));
     }
@@ -1474,18 +1560,24 @@ OAL_STATIC  oal_bool_enum_uint8 hmac_transfer_rx_handler(hmac_device_stru* pst_h
 {
 #ifndef WIN32
     hmac_rx_ctl_stru                   *pst_rx_ctrl;                        /* 指向MPDU控制块信息的指针 */
-    oal_netbuf_stru* pst_mac_llc_snap_netbuf;
+    mac_llc_snap_stru* pst_mac_llc_snap_netbuf;
+    oal_uint32 buf_len = OAL_NETBUF_LEN(netbuf);
 
 #ifdef _PRE_WLAN_FEATURE_OFFLOAD_FLOWCTL
     if(OAL_TRUE == pst_hmac_device->sys_tcp_rx_ack_opt_enable)
     {
         pst_rx_ctrl = (hmac_rx_ctl_stru *)oal_netbuf_cb(netbuf);
-        pst_mac_llc_snap_netbuf = (oal_netbuf_stru*)(netbuf->data + pst_rx_ctrl->st_rx_info.uc_mac_header_len);
+        if (buf_len < pst_rx_ctrl->st_rx_info.uc_mac_header_len) {
+            OAM_ERROR_LOG1(0, OAM_SF_TX, "{hmac_transfer_rx_tcp_ack_handler::buf_len[%d].}", buf_len);
+            return OAL_FALSE;
+        }
+        buf_len -= pst_rx_ctrl->st_rx_info.uc_mac_header_len;
+        pst_mac_llc_snap_netbuf = (mac_llc_snap_stru*)(netbuf->data + pst_rx_ctrl->st_rx_info.uc_mac_header_len);
 #ifdef _PRE_WLAN_TCP_OPT_DEBUG
         OAM_WARNING_LOG1(0, OAM_SF_TX,
                              "{hmac_transfer_rx_handler::uc_mac_header_len = %d}\r\n",pst_rx_ctrl->st_rx_info.uc_mac_header_len);
 #endif
-        if(OAL_TRUE == hmac_judge_rx_netbuf_classify(pst_mac_llc_snap_netbuf))
+        if(OAL_TRUE == hmac_judge_rx_netbuf_classify(pst_mac_llc_snap_netbuf, buf_len))
         {
 #ifdef _PRE_WLAN_TCP_OPT_DEBUG
             OAM_WARNING_LOG0(0, OAM_SF_TX,

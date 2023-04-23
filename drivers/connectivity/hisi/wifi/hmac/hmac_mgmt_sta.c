@@ -84,7 +84,8 @@ extern "C" {
 oal_void hmac_btcoex_check_rx_same_baw_start_from_addba_req(hmac_vap_stru *pst_hmac_vap,
                                                         hmac_user_stru *pst_hmac_user,
                                                         mac_ieee80211_frame_stru *pst_frame_hdr,
-                                                        oal_uint8 *puc_action);
+                                                        oal_uint8 *puc_action,
+                                                        oal_uint32 frame_body_len);
 oal_uint32 hmac_btcoex_check_exception_in_list(hmac_vap_stru *pst_hmac_vap, oal_uint8 *auc_addr);
 
 #endif
@@ -1012,6 +1013,11 @@ oal_uint32  hmac_sta_wait_asoc(hmac_vap_stru *pst_sta, oal_void *pst_msg)
 
         return OAL_ERR_CODE_PTR_NULL;
     }
+    if (pst_sta->bit_reassoc_flag)
+    {
+        // 重关联流程中清除user下的分片缓存，防止重关联或者rekey流程报文重组攻击
+        hmac_user_clear_defrag_res(pst_hmac_user_ap);
+    }
 
     pst_tx_ctl = (mac_tx_ctl_stru *)oal_netbuf_cb(pst_asoc_req_frame);
 
@@ -1608,6 +1614,12 @@ oal_void hmac_sta_up_update_edca_params(
         puc_ie = mac_get_wmm_ie(puc_payload, us_msg_len);
         if (OAL_PTR_NULL != puc_ie)
         {
+            /* puc_ie[1]的长度是不包括自己和之前字节的长度总长 */
+            if (puc_ie[1] < HMAC_WMM_QOS_PARAMS_HDR_LEN) {
+                OAM_ERROR_LOG1(0, OAM_SF_ASSOC, "{hmac_sta_up_get_edca_params::ie len error[%d]!}", puc_ie[1]);
+                return;
+            }
+
             /* 解析wmm ie是否携带EDCA参数 */
             uc_edca_param_set = puc_ie[MAC_OUISUBTYPE_WMM_PARAM_OFFSET];
             uc_param_set_cnt  = puc_ie[HMAC_WMM_QOS_PARAMS_HDR_LEN] & 0x0F;
@@ -1640,7 +1652,8 @@ oal_void hmac_sta_up_update_edca_params(
             us_msg_offset = (HMAC_WMM_QOSINFO_AND_RESV_LEN + HMAC_WMM_QOS_PARAMS_HDR_LEN);
 
             /* wmm ie中不携带edca参数 直接返回 */
-            if(MAC_OUISUBTYPE_WMM_PARAM != uc_edca_param_set)
+            if(MAC_OUISUBTYPE_WMM_PARAM != uc_edca_param_set ||
+                (puc_ie[1] < (HMAC_WMM_QOS_PARAMS_HDR_LEN + WLAN_WME_AC_BUTT * HMAC_WMM_AC_PARAMS_RECORD_LEN)))
             {
                 return;
             }
@@ -3150,6 +3163,23 @@ OAL_STATIC oal_void  hmac_handle_tbtt_chan_mgmt_sta(hmac_vap_stru *pst_hmac_vap)
 }
 #endif
 
+/* 获取帧体长度 */
+oal_uint32 hmac_get_frame_body_len(oal_netbuf_stru *net_buf)
+{
+    dmac_rx_ctl_stru *rx_ctrl = NULL;
+    rx_ctrl = (dmac_rx_ctl_stru *)oal_netbuf_cb(net_buf);
+    if (rx_ctrl == NULL) {
+        OAM_ERROR_LOG0(0, OAM_SF_ASSOC, "{hmac_get_frame_body_len::get null.}");
+        return 0;
+    }
+    if (rx_ctrl->st_rx_info.us_frame_len < rx_ctrl->st_rx_info.uc_mac_header_len) {
+        OAM_ERROR_LOG1(0, OAM_SF_ASSOC, "{hmac_get_frame_body_len::us_frame_len%d.}", rx_ctrl->st_rx_info.us_frame_len);
+        return 0;
+    }
+
+    return rx_ctrl->st_rx_info.us_frame_len - rx_ctrl->st_rx_info.uc_mac_header_len;
+}
+
 
 OAL_STATIC oal_void  hmac_sta_up_rx_action(hmac_vap_stru *pst_hmac_vap, oal_netbuf_stru *pst_netbuf, oal_bool_enum_uint8 en_is_protected)
 {
@@ -3157,10 +3187,17 @@ OAL_STATIC oal_void  hmac_sta_up_rx_action(hmac_vap_stru *pst_hmac_vap, oal_netb
     oal_uint8                      *puc_data;
     mac_ieee80211_frame_stru       *pst_frame_hdr;          /* 保存mac帧的指针 */
     hmac_user_stru                 *pst_hmac_user;
+    oal_uint32                      frame_body_len;
 #ifdef _PRE_WLAN_FEATURE_P2P
     oal_uint8                      *puc_p2p0_mac_addr;
 #endif
     pst_rx_ctrl = (dmac_rx_ctl_stru *)oal_netbuf_cb(pst_netbuf);
+    frame_body_len = hmac_get_frame_body_len(pst_netbuf);
+
+    if (frame_body_len < MAC_ACTION_CATEGORY_AND_CODE_LEN) {
+        OAM_WARNING_LOG1(0, OAM_SF_RX, "{sta_up::frame len too short[%d].}", pst_rx_ctrl->st_rx_info.us_frame_len);
+        return;
+    }
 
     /* 获取帧头信息 */
     pst_frame_hdr = (mac_ieee80211_frame_stru *)pst_rx_ctrl->st_rx_info.pul_mac_hdr_start_addr;
@@ -3192,18 +3229,19 @@ OAL_STATIC oal_void  hmac_sta_up_rx_action(hmac_vap_stru *pst_hmac_vap, oal_netb
             switch(puc_data[MAC_ACTION_OFFSET_ACTION])
             {
                 case MAC_BA_ACTION_ADDBA_REQ:
-                    hmac_mgmt_rx_addba_req(pst_hmac_vap, pst_hmac_user, puc_data);
+                    hmac_mgmt_rx_addba_req(pst_hmac_vap, pst_hmac_user, puc_data, frame_body_len);
                 #ifdef _PRE_WLAN_FEATURE_BTCOEX
-                    hmac_btcoex_check_rx_same_baw_start_from_addba_req(pst_hmac_vap, pst_hmac_user, pst_frame_hdr, puc_data);
+                    hmac_btcoex_check_rx_same_baw_start_from_addba_req(pst_hmac_vap, pst_hmac_user, pst_frame_hdr,
+                                                                       puc_data, frame_body_len);
                 #endif
                     break;
 
                 case MAC_BA_ACTION_ADDBA_RSP:
-                    hmac_mgmt_rx_addba_rsp(pst_hmac_vap, pst_hmac_user, puc_data);
+                    hmac_mgmt_rx_addba_rsp(pst_hmac_vap, pst_hmac_user, puc_data, frame_body_len);
                     break;
 
                 case MAC_BA_ACTION_DELBA:
-                    hmac_mgmt_rx_delba(pst_hmac_vap, pst_hmac_user, puc_data);
+                    hmac_mgmt_rx_delba(pst_hmac_vap, pst_hmac_user, puc_data, frame_body_len);
                     break;
 
                 default:
@@ -3225,6 +3263,10 @@ OAL_STATIC oal_void  hmac_sta_up_rx_action(hmac_vap_stru *pst_hmac_vap, oal_netb
             switch (puc_data[MAC_ACTION_OFFSET_ACTION])
             {
                 case MAC_PUB_VENDOR_SPECIFIC:
+                    if (frame_body_len <= MAC_ACTION_CATEGORY_AND_CODE_LEN + MAC_OUI_LEN) {
+                        OAM_WARNING_LOG1(0, OAM_SF_RX, "{hmac_action_category_public::frame_body_len %d.}", frame_body_len);
+                        return;
+                    }
             #ifdef _PRE_WLAN_FEATURE_P2P
                 /*查找OUI-OUI type值为 50 6F 9A - 09 (WFA P2P v1.0)  */
                 /* 并用hmac_rx_mgmt_send_to_host接口上报 */
@@ -3256,10 +3298,10 @@ OAL_STATIC oal_void  hmac_sta_up_rx_action(hmac_vap_stru *pst_hmac_vap, oal_netb
                 switch(puc_data[MAC_ACTION_OFFSET_ACTION])
                 {
                     case MAC_WMMAC_ACTION_ADDTS_RSP:
-                        hmac_mgmt_rx_addts_rsp(pst_hmac_vap, pst_hmac_user, puc_data);
+                        hmac_mgmt_rx_addts_rsp(pst_hmac_vap, pst_hmac_user, puc_data, frame_body_len);
                         break;
                     case MAC_WMMAC_ACTION_DELTS:
-                        hmac_mgmt_rx_delts(pst_hmac_vap, pst_hmac_user, puc_data);
+                        hmac_mgmt_rx_delts(pst_hmac_vap, pst_hmac_user, puc_data, frame_body_len);
                         break;
                     default:
                         break;
@@ -3289,6 +3331,10 @@ OAL_STATIC oal_void  hmac_sta_up_rx_action(hmac_vap_stru *pst_hmac_vap, oal_netb
 #endif
         case MAC_ACTION_CATEGORY_VENDOR:
         {
+            if (frame_body_len <= MAC_ACTION_CATEGORY_AND_CODE_LEN + MAC_OUI_LEN) {
+                OAM_WARNING_LOG1(0, OAM_SF_RX, "{hmac_action_category_vendor::frame_body_len %d.}", frame_body_len);
+                return;
+            }
     #ifdef _PRE_WLAN_FEATURE_P2P
         /*查找OUI-OUI type值为 50 6F 9A - 09 (WFA P2P v1.0)  */
         /* 并用hmac_rx_mgmt_send_to_host接口上报 */

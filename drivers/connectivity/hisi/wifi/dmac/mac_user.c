@@ -129,6 +129,16 @@ oal_uint32 mac_user_set_port(mac_user_stru *pst_mac_user, oal_bool_enum_uint8 en
     return OAL_SUCC;
 }
 
+oal_bool_enum_uint8 mac_user_get_port(mac_user_stru *pst_mac_user)
+{
+    if (pst_mac_user) {
+        return pst_mac_user->en_port_valid;
+    }
+
+    return OAL_FALSE;
+}
+
+
 
 oal_uint32 mac_user_init_key(mac_user_stru *pst_mac_user)
 {
@@ -191,16 +201,17 @@ oal_uint32  mac_user_init(
     /* 初始化安全加密信息 */
     mac_user_init_key(pst_mac_user);
     mac_user_set_key(pst_mac_user, WLAN_KEY_TYPE_PTK, WLAN_80211_CIPHER_SUITE_NO_ENCRYP, 0);
-    mac_user_set_port(pst_mac_user, OAL_FALSE);
     pst_mac_user->en_user_asoc_state = MAC_USER_STATE_BUTT;
 
     if (OAL_PTR_NULL == puc_mac_addr)
     {
+        mac_user_set_port(pst_mac_user, OAL_TRUE);
         pst_mac_user->en_is_multi_user   = OAL_TRUE;
         pst_mac_user->en_user_asoc_state = MAC_USER_STATE_ASSOC;
     }
     else
     {
+        mac_user_set_port(pst_mac_user, OAL_FALSE);
         /* 初始化一个用户是否是组播用户的标志，组播用户初始化时不会调用本函数 */
         pst_mac_user->en_is_multi_user = OAL_FALSE;
 

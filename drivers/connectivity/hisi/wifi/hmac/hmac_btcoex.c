@@ -275,15 +275,19 @@ OAL_STATIC oal_void hmac_btcoex_add_exception_to_list(hmac_vap_stru *pst_hmac_va
 
 
 oal_void hmac_btcoex_check_rx_same_baw_start_from_addba_req(hmac_vap_stru *pst_hmac_vap,
-                                                                                    hmac_user_stru *pst_hmac_user,
-                                                                                    mac_ieee80211_frame_stru *pst_frame_hdr,
-                                                                                    oal_uint8 *puc_action)
+                                                            hmac_user_stru *pst_hmac_user,
+                                                            mac_ieee80211_frame_stru *pst_frame_hdr,
+                                                            oal_uint8 *puc_action,
+                                                            oal_uint32 frame_body_len)
 {
     hmac_user_btcoex_stru *pst_hmac_user_btcoex;
     hmac_btcoex_addba_req_stru *pst_hmac_btcoex_addba_req;
     oal_uint16 us_baw_start;
     oal_uint8 uc_tid;
-
+    if (frame_body_len < MAC_ADDBA_REQ_FRAME_BODY_LEN) {
+        OAM_WARNING_LOG1(0, OAM_SF_COEX, "{frame_body_len[%d] < MAC_ADDBA_REQ_FRAME_BODY_LEN.}", frame_body_len);
+        return;
+    }
     pst_hmac_user_btcoex = &(pst_hmac_user->st_hmac_user_btcoex);
 
     pst_hmac_btcoex_addba_req = &(pst_hmac_user_btcoex->st_hmac_btcoex_addba_req);

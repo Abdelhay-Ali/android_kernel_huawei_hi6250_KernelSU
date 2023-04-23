@@ -120,6 +120,14 @@ extern "C" {
 #define MAC_P2P_LISTEN_CHN_ATTR_LEN  5   /* LISTEN CHANNEL ATTRIBUTE长度 */
 #define MAC_P2P_MIN_IE_LEN           4   /* P2P IE的最小长度 */
 
+#define MAC_ADDBA_REQ_FRAME_BODY_LEN 9   /* addba req帧 帧体长度 */
+#define MAC_ADDBA_RSP_FRAME_BODY_LEN 9   /* addba rsp帧 帧体长度 */
+#define MAC_ADDBA_DEL_FRAME_BODY_LEN 6   /* addba del帧 帧体长度 */
+
+#define MAC_ADDTS_RSP_FRAME_BODY_LEN 12   /* addts rsp帧 帧体长度 */
+#define MAC_DELTS_FRAME_BODY_LEN 12   /* delts 帧 帧体长度 */
+#define MAC_ACTION_CATEGORY_AND_CODE_LEN 2
+
 /* Quiet 信息 */
 #define MAC_QUIET_PERIOD            0
 #define MAC_QUIET_COUNT             MAC_QUIET_PERIOD

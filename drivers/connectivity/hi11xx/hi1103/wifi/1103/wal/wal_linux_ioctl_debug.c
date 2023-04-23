@@ -7193,93 +7193,6 @@ OAL_STATIC oal_uint32  wal_hipriv_dump_ba_bitmap(oal_net_device_stru *pst_net_de
     return OAL_SUCC;
 }
 
-
-OAL_STATIC oal_uint32  wal_hipriv_packet_xmit(oal_net_device_stru *pst_net_dev, oal_int8 *pc_param)
-{
-    wal_msg_write_stru              st_write_msg;
-    oal_uint32                      ul_off_set;
-    oal_int8                        ac_name[WAL_HIPRIV_CMD_NAME_MAX_LEN] = {0};
-    oal_uint32                      ul_ret;
-    oal_int32                       l_ret;
-    mac_cfg_mpdu_ampdu_tx_param_stru *pst_aggr_tx_on_param;
-    oal_uint8                       uc_packet_num;
-    oal_uint8                       uc_tid;
-    oal_uint16                      uc_packet_len;
-    oal_uint8                       auc_ra_addr[WLAN_MAC_ADDR_LEN] = {0};
-
-    ul_ret = wal_get_cmd_one_arg_etc(pc_param, ac_name, &ul_off_set);
-    if (OAL_SUCC != ul_ret)
-    {
-         OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_hipriv_packet_xmit::wal_get_cmd_one_arg_etc return err_code [%d]!}\r\n", ul_ret);
-         return ul_ret;
-    }
-    uc_tid = (oal_uint8)oal_atoi(ac_name);
-    if(uc_tid >= WLAN_TID_MAX_NUM)
-    {
-         return OAL_FAIL;
-    }
-    pc_param = pc_param + ul_off_set;
-
-    ul_ret = wal_get_cmd_one_arg_etc(pc_param, ac_name, &ul_off_set);
-    if (OAL_SUCC != ul_ret)
-    {
-         OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_hipriv_packet_xmit::wal_get_cmd_one_arg_etc return err_code [%d]!}\r\n", ul_ret);
-         return ul_ret;
-    }
-    pc_param = pc_param + ul_off_set;
-    uc_packet_num = (oal_uint8)oal_atoi(ac_name);
-
-    ul_ret = wal_get_cmd_one_arg_etc(pc_param, ac_name, &ul_off_set);
-    if (OAL_SUCC != ul_ret)
-    {
-         OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_hipriv_packet_xmit::wal_get_cmd_one_arg_etc return err_code [%d]!}\r\n", ul_ret);
-         return ul_ret;
-    }
-    uc_packet_len = (oal_uint16)oal_atoi(ac_name);
-    if(uc_packet_len < 30)
-    {
-        return OAL_FAIL;
-    }
-    pc_param += ul_off_set;
-
-    /* 获取MAC地址字符串 */
-    ul_ret = wal_get_cmd_one_arg_etc(pc_param, ac_name, &ul_off_set);
-    if (OAL_SUCC != ul_ret)
-    {
-        OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_hipriv_packet_xmit::get mac err_code [%d]!}\r\n", ul_ret);
-        return ul_ret;
-    }
-    /* 地址字符串转地址数组 */
-    oal_strtoaddr(ac_name, auc_ra_addr);
-    pc_param += ul_off_set;
-
-    /***************************************************************************
-                             抛事件到wal层处理
-    ***************************************************************************/
-    WAL_WRITE_MSG_HDR_INIT(&st_write_msg, WLAN_CFGID_PACKET_XMIT, OAL_SIZEOF(mac_cfg_mpdu_ampdu_tx_param_stru));
-
-    /* 设置配置命令参数 */
-    pst_aggr_tx_on_param = (mac_cfg_mpdu_ampdu_tx_param_stru *)(st_write_msg.auc_value);
-    pst_aggr_tx_on_param->uc_packet_num = uc_packet_num;
-    pst_aggr_tx_on_param->uc_tid        = uc_tid;
-    pst_aggr_tx_on_param->us_packet_len = uc_packet_len;
-    oal_set_mac_addr(pst_aggr_tx_on_param->auc_ra_mac, auc_ra_addr);
-
-    l_ret = wal_send_cfg_event_etc(pst_net_dev,
-                               WAL_MSG_TYPE_WRITE,
-                               WAL_MSG_WRITE_MSG_HDR_LENGTH + OAL_SIZEOF(mac_cfg_mpdu_ampdu_tx_param_stru),
-                               (oal_uint8 *)&st_write_msg,
-                               OAL_FALSE,
-                               OAL_PTR_NULL);
-
-    if (OAL_UNLIKELY(OAL_SUCC != l_ret))
-    {
-        OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_hipriv_packet_xmit::return err code [%d]!}\r\n", l_ret);
-        return (oal_uint32)l_ret;
-    }
-
-    return OAL_SUCC;
-}
 OAL_STATIC oal_uint32  wal_hipriv_alg(oal_net_device_stru *pst_net_dev, oal_int8 *pc_param)
 {
     wal_msg_write_stru  st_write_msg;  //FIXME : st_write_msg can only carry bytes less than 48
@@ -18419,7 +18332,6 @@ OAL_CONST wal_hipriv_cmd_entry_stru  g_ast_hipriv_cmd_debug_etc[] =
 #ifdef _PRE_WLAN_FEATUER_PCIE_TEST
     {"pcie_test",               wal_hipriv_pcie_test},              /* PCIE test: 0-15(总线测试粒度0-15) 0/1(读) 0/1(写): hipriv "vap0 pcie_test 0-15 0/1 0/1" */
 #endif
-    {"packet_xmit",             wal_hipriv_packet_xmit},            /* 向目标STA/AP发送数据帧: hipriv "vap0 packet_xmit (tid_no) (报文个数) (报文长度) (RA MAC)" */
     {"dump_ba_bitmap",          wal_hipriv_dump_ba_bitmap},         /* 打印发送ba的bitmap hipriv "vap0 dump_ba_bitmap (tid_no) (RA)" */
     {"wifi_stat_info",          wal_hipriv_show_stat_info},         /* 获取所有维测统计信息: hipriv "Hisilicon0 wifi_stat_info" */
     {"vap_pkt_stat",            wal_hipriv_show_vap_pkt_stat},      /* 获取某一个vap下的收发包统计信息: sh hipriv.sh "vap_name vap_pkt_stat" */
@@ -18715,7 +18627,6 @@ OAL_CONST wal_hipriv_cmd_entry_stru  g_ast_hipriv_cmd_debug_etc[] =
 #endif
     {"txpower",         wal_hipriv_set_txpower},                 /* 设置最大发送功率，要求功率值按照扩大10倍来输入，例如最大功率要限制为20，输入200 */
 #if  (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,44))
-    {"essid",           wal_ioctl_set_essid_etc},                   /* 设置AP ssid */
     {"bintval",         wal_ioctl_set_beacon_interval},         /* 设置AP beacon 周期 */
     {"up",              wal_hipriv_start_vap},
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,44)) */

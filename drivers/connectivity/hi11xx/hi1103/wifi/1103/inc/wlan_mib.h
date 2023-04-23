@@ -952,6 +952,7 @@ typedef enum
     WLAN_CFGID_LIST_CHAN                    = 217,      /* 列举支持的管制域信道 */
     WLAN_CFGID_REGDOMAIN_PWR                = 218,      /* 设置管制域功率 */
     WLAN_CFGID_TXBF_SWITCH                  = 219,      /* 开启或关闭TXBF发送/接收功能 */
+    WLAN_CFGID_TXBF_MIB_UPDATE              = 220,      /* 刷新txbf mib能力 */
     WLAN_CFGID_FRAG_THRESHOLD_REG           = 221,      /* 设置分片门限长度 */
     WLAN_CFGID_SET_VOWIFI_KEEP_ALIVE        = 222,      /*vowifi nat keep alive*/
 
@@ -961,7 +962,6 @@ typedef enum
     WLAN_CFGID_SET_STA_PM_ON                = 232,      /* STA低功耗开关接口 */
 #endif
 
-    WLAN_CFGID_PACKET_XMIT                  = 240,      /* 发指定个数的报文 */
     WLAN_CFGID_DUMP_BA_BITMAP               = 241,      /* 发指定个数的报文 */
     WLAN_CFGID_VAP_PKT_STAT                 = 242,      /* vap统计信息 */
     WLAN_CFGID_TIMER_START                  = 244,

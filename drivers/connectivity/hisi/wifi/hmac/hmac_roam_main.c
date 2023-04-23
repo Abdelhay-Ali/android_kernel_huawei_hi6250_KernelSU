@@ -1047,6 +1047,7 @@ OAL_STATIC oal_uint32  hmac_roam_scan_timeout(hmac_roam_info_stru *pst_roam_info
 
 OAL_STATIC oal_uint32  hmac_roam_connecting_timeout(hmac_roam_info_stru *pst_roam_info, oal_void *p_param)
 {
+    oal_bool_enum_uint8 need_post_stop_event = OAL_TRUE;
     oal_uint32       ul_ret         = OAL_SUCC;
 
     ul_ret = hmac_roam_main_check_state(pst_roam_info, MAC_VAP_STATE_ROAMING, ROAM_MAIN_STATE_CONNECTING);
@@ -1064,8 +1065,12 @@ OAL_STATIC oal_uint32  hmac_roam_connecting_timeout(hmac_roam_info_stru *pst_roa
                        "{hmac_roam_handle_fail_connect_phase:: hmac_roam_to_old_bss fail[%d]!}", ul_ret);
     }
 
+    if (pst_roam_info->st_connect.en_state == ROAM_CONNECT_STATE_HANDSHAKING) {
+        need_post_stop_event = OAL_FALSE;/* 握手失败不需要恢复device漫游状态 */
+    }
+
     /* 切换vap的状态为UP，恢复用户节能，恢复发送 */
-    ul_ret = hmac_fsm_call_func_sta(pst_roam_info->pst_hmac_vap, HMAC_FSM_INPUT_ROAMING_STOP, OAL_PTR_NULL);
+    ul_ret = hmac_fsm_call_func_sta(pst_roam_info->pst_hmac_vap, HMAC_FSM_INPUT_ROAMING_STOP, (oal_void *)&need_post_stop_event);
 
     if (OAL_SUCC != ul_ret)
     {
@@ -1097,6 +1102,7 @@ OAL_STATIC oal_uint32  hmac_roam_connecting_fail(hmac_roam_info_stru *pst_roam_i
 
 OAL_STATIC oal_uint32  hmac_roam_handle_fail_handshake_phase(hmac_roam_info_stru *pst_roam_info, oal_void *p_param)
 {
+    oal_bool_enum_uint8 need_post_stop_event = OAL_FALSE;/* 握手失败不需要恢复device漫游状态 */
     oal_uint32       ul_ret;
 
     ul_ret = hmac_roam_main_check_state(pst_roam_info, MAC_VAP_STATE_ROAMING, ROAM_MAIN_STATE_CONNECTING);
@@ -1115,8 +1121,7 @@ OAL_STATIC oal_uint32  hmac_roam_handle_fail_handshake_phase(hmac_roam_info_stru
     }
 
     /* 切换vap的状态为UP，恢复用户节能，恢复发送 */
-    ul_ret = hmac_fsm_call_func_sta(pst_roam_info->pst_hmac_vap, HMAC_FSM_INPUT_ROAMING_STOP, OAL_PTR_NULL);
-
+    ul_ret = hmac_fsm_call_func_sta(pst_roam_info->pst_hmac_vap, HMAC_FSM_INPUT_ROAMING_STOP, (oal_void *)&need_post_stop_event);
     if (OAL_SUCC != ul_ret)
     {
         OAM_ERROR_LOG1(pst_roam_info->pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ROAM,
@@ -1354,6 +1359,7 @@ OAL_STATIC oal_uint32  hmac_roam_to_new_bss(hmac_roam_info_stru *pst_roam_info, 
 {
     hmac_vap_stru           *pst_hmac_vap  = pst_roam_info->pst_hmac_vap;
     hmac_user_stru          *pst_hmac_user = pst_roam_info->pst_hmac_user;
+    oal_bool_enum_uint8      need_post_stop_event = OAL_TRUE;
     oal_uint32               ul_ret;
 
     ul_ret = hmac_roam_main_check_state(pst_roam_info, MAC_VAP_STATE_ROAMING, ROAM_MAIN_STATE_CONNECTING);
@@ -1371,7 +1377,7 @@ OAL_STATIC oal_uint32  hmac_roam_to_new_bss(hmac_roam_info_stru *pst_roam_info, 
     hmac_roam_main_del_timer(pst_roam_info);
 
     /* 切换vap的状态为UP，恢复用户节能，恢复发送 */
-    ul_ret = hmac_fsm_call_func_sta(pst_hmac_vap, HMAC_FSM_INPUT_ROAMING_STOP, OAL_PTR_NULL);
+    ul_ret = hmac_fsm_call_func_sta(pst_hmac_vap, HMAC_FSM_INPUT_ROAMING_STOP, (oal_void *)&need_post_stop_event);
     if (OAL_SUCC != ul_ret)
     {
         OAM_WARNING_LOG1(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ROAM, "{hmac_roam_to_new_bss::hmac_fsm_call_func_sta fail! erro code is %u}", ul_ret);
@@ -1704,10 +1710,11 @@ oal_uint32  hmac_roam_resume_user(hmac_vap_stru *pst_hmac_vap, oal_void *p_param
     oal_uint32                        ul_ret;
     oal_uint8                         uc_vap_id;
     oal_uint8                         uc_roaming_mode;
+    oal_bool_enum_uint8               need_post_stop_event;
 
-    if (pst_hmac_vap == OAL_PTR_NULL)
+    if (pst_hmac_vap == OAL_PTR_NULL || p_param == OAL_PTR_NULL)
     {
-        OAM_ERROR_LOG0(0, OAM_SF_ROAM, "{hmac_roam_resume_user::vap null!}");
+        OAM_ERROR_LOG0(0, OAM_SF_ROAM, "{hmac_roam_resume_user::vap or param is null!}");
         return OAL_ERR_CODE_ROAM_INVALID_VAP;
     }
 
@@ -1738,11 +1745,15 @@ oal_uint32  hmac_roam_resume_user(hmac_vap_stru *pst_hmac_vap, oal_void *p_param
         return OAL_SUCC;
     }
 
-    uc_roaming_mode = 0;
-    ul_ret = hmac_config_send_event(&pst_hmac_vap->st_vap_base_info, WLAN_CFGID_SET_ROAMING_MODE, OAL_SIZEOF(oal_uint8), (oal_uint8 *)&uc_roaming_mode);
-    if (OAL_SUCC != ul_ret)
-    {
-        OAM_ERROR_LOG1(uc_vap_id, OAM_SF_CFG, "{hmac_roam_resume_user::send event[WLAN_CFGID_SET_ROAMING_MODE] failed[%d].}", ul_ret);
+    /* 握手失败不需要重新恢复用户 */
+    need_post_stop_event = *(oal_bool_enum_uint8 *)p_param;
+    if (need_post_stop_event == OAL_TRUE) {
+        uc_roaming_mode = 0;
+        ul_ret = hmac_config_send_event(&pst_hmac_vap->st_vap_base_info, WLAN_CFGID_SET_ROAMING_MODE, OAL_SIZEOF(oal_uint8), (oal_uint8 *)&uc_roaming_mode);
+        if (OAL_SUCC != ul_ret)
+        {
+            OAM_ERROR_LOG1(uc_vap_id, OAM_SF_CFG, "{hmac_roam_resume_user::send event[WLAN_CFGID_SET_ROAMING_MODE] failed[%d].}", ul_ret);
+        }
     }
 
     hmac_fsm_change_state(pst_hmac_vap, MAC_VAP_STATE_UP);

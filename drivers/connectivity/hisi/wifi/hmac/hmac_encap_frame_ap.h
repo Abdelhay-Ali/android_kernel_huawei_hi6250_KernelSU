@@ -83,7 +83,7 @@ typedef hmac_ap_auth_process_code_enum_uint8 (*hmac_auth_rsp_fun)(
                                                     mac_vap_stru *pst_mac_vap,\
                                                     hmac_auth_rsp_param_stru *pst_auth_rsp_param, \
                                                     oal_uint8 *puc_code, \
-                                                    mac_user_asoc_state_enum_uint8 *pst_usr_ass_stat);
+                                                    hmac_user_stru *hmac_user_sta);
 
 typedef struct tag_hmac_auth_rsp_handle_stru
 {

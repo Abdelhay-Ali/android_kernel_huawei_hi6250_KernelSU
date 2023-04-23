@@ -119,12 +119,16 @@ OAL_STATIC OAL_CONST wal_atcmdsrv_datarate_stru   past_atcmdsrv_non_ht_rate_tabl
     {48," 48 "},
     {54," 54 "},
 };
-oal_uint64                      ul_chipcheck_total_time_etc;
+oal_uint64                      ull_chipcheck_total_time_etc;
 oal_uint16                      g_us_efuse_buffer_etc[WAL_ATCMDSRV_EFUSE_BUFF_LEN];
 
 wal_efuse_bits                  *st_efuse_bits_etc = OAL_PTR_NULL;
 oal_int32                       g_l_bandwidth_etc;
 oal_int32                       g_l_mode_etc;
+
+#define WAL_ATCMDSRV_WIFI_CHAN_NUM                2
+#define WAL_ATCMDSRV_DYN_INTVAL_LEN               19
+#define WAL_ATCMDSRV_DYN_INTVAL_LOCATION         (WAL_ATCMDSRV_DYN_INTVAL_LEN - 2)
 
 #if (_PRE_OS_VERSION_LINUX == _PRE_OS_VERSION)
 extern BOARD_INFO               g_board_info_etc;
@@ -350,7 +354,8 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_mode(oal_net_device_stru *pst_net_de
     wal_msg_write_stru          st_write_msg;
     mac_cfg_mode_param_stru    *pst_mode_param;
     oal_uint8                   uc_prot_idx;
-    mac_vap_stru                *pst_mac_vap;
+    mac_vap_stru               *pst_mac_vap;
+    oal_uint8                   uc_arr_num = OAL_ARRAY_SIZE(g_ast_atcmdsrv_mode_table_etc);
 
     oal_int32                   l_ret = 0;
 
@@ -362,12 +367,17 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_mode(oal_net_device_stru *pst_net_de
     }
 
     /*获取模式对应的band*/
-    for (uc_prot_idx = 0; uc_prot_idx < WAL_ATCMDSRV_IOCTL_MODE_NUM; uc_prot_idx++)
+    for (uc_prot_idx = 0; uc_prot_idx < uc_arr_num; uc_prot_idx++)
     {
         if (g_ast_atcmdsrv_mode_table_etc[uc_prot_idx].uc_mode == (oal_uint8)l_mode)
         {
             break;
         }
+    }
+    if (uc_prot_idx >= uc_arr_num)
+    {
+        OAM_ERROR_LOG1(0,OAM_SF_ANY,"{wal_atcmsrv_ioctl_set_mode:err code[%u]}",uc_prot_idx);
+        return -OAL_EINVAL;
     }
 
     /***************************************************************************
@@ -389,11 +399,6 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_mode(oal_net_device_stru *pst_net_de
     else
     {
         pst_mode_param->en_protocol  = (oal_uint8)l_mode;
-    }
-    if (uc_prot_idx >= WAL_ATCMDSRV_IOCTL_MODE_NUM)
-    {
-        OAM_ERROR_LOG1(0,OAM_SF_ANY,"{wal_atcmsrv_ioctl_set_mode:err code[%u]}",uc_prot_idx);
-        return l_ret;
     }
     pst_mode_param->en_band      = (wlan_channel_band_enum_uint8)g_ast_atcmdsrv_mode_table_etc[uc_prot_idx].uc_band;
     pst_mode_param->en_bandwidth = WLAN_BAND_WIDTH_20M;
@@ -427,6 +432,7 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_datarate(oal_net_device_stru *pst_ne
     mac_cfg_tx_comp_stru        *pst_set_bw_param;
     wal_msg_write_stru          st_write_msg;
     oal_int32                   l_ret;
+    oal_uint8                   uc_arr_num = OAL_ARRAY_SIZE(past_atcmdsrv_non_ht_rate_table);
 
     pst_mac_vap = OAL_NET_DEV_PRIV(pst_net_dev);
     if (OAL_PTR_NULL == pst_mac_vap)
@@ -439,14 +445,14 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_datarate(oal_net_device_stru *pst_ne
     OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "wal_atcmsrv_ioctl_set_datarate:l_datarate[%d]", l_datarate);
 
     /*获取速率对应的字符，方便调用设置速率的相应接口*/
-    for (uc_prot_idx = 0; uc_prot_idx < WAL_ATCMDSRV_IOCTL_DATARATE_NUM; uc_prot_idx++)
+    for (uc_prot_idx = 0; uc_prot_idx < uc_arr_num; uc_prot_idx++)
     {
         if (past_atcmdsrv_non_ht_rate_table[uc_prot_idx].ul_datarate == (oal_uint32)l_datarate)
         {
             break;
         }
     }
-    if (uc_prot_idx >= WAL_ATCMDSRV_IOCTL_DATARATE_NUM)
+    if (uc_prot_idx >= uc_arr_num)
     {
         OAM_ERROR_LOG0(0, OAM_SF_ANY,"uc_prot_idx Overrunning!");
         return -OAL_EINVAL;
@@ -552,7 +558,6 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_always_tx(oal_net_device_stru *pst_n
     wal_msg_write_stru               st_write_msg;
     oal_int32                        l_ret;
     mac_cfg_tx_comp_stru             *pst_set_bcast_param;
-    oal_int8                          pc_param;
     oal_uint8                         auc_param[] = {"all"};
     oal_uint16                        us_len;
     oal_uint32                       *pul_num;
@@ -614,14 +619,9 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_always_tx(oal_net_device_stru *pst_n
     }
 
 
-    /*打印未测信息*/
+    /*打印维测信息*/
     if (l_always_tx)
     {
-        l_ret = (oal_int32)wal_hipriv_vap_info_etc(pst_net_dev,&pc_param);
-        if (OAL_UNLIKELY(OAL_SUCC != l_ret))
-        {
-            OAM_WARNING_LOG1(0, OAM_SF_ANY, "{wal_atcmsrv_ioctl_set_always_tx::return err code [%d]!}", l_ret);
-        }
         /*打印所有寄存器*/
         /***************************************************************************
                                     抛事件到wal层处理
@@ -1676,18 +1676,18 @@ OAL_STATIC oal_int32  wal_atcmsrv_ioctl_set_chipcheck(oal_net_device_stru *pst_n
 OAL_STATIC oal_int32  wal_atcmsrv_ioctl_get_chipcheck_result(oal_net_device_stru *pst_net_dev, oal_int32 *l_chipcheck_result)
 {
 
-    *l_chipcheck_result = wlan_device_mem_check_result_etc(&ul_chipcheck_total_time_etc);
+    *l_chipcheck_result = wlan_device_mem_check_result_etc(&ull_chipcheck_total_time_etc);
 
     OAM_WARNING_LOG1(0, OAM_SF_ANY, "wal_atcmsrv_ioctl_get_chipcheck_result:result[%d]",*l_chipcheck_result);
     return OAL_SUCC;
 }
 
 
-OAL_STATIC oal_int32  wal_atcmsrv_ioctl_get_chipcheck_time(oal_net_device_stru *pst_net_dev, oal_uint64 *ul_chipcheck_time)
+OAL_STATIC oal_int32  wal_atcmsrv_ioctl_get_chipcheck_time(oal_net_device_stru *pst_net_dev, oal_uint64 *ull_chipcheck_time)
 {
-    *ul_chipcheck_time = ul_chipcheck_total_time_etc;
+    *ull_chipcheck_time = ull_chipcheck_total_time_etc;
 
-    OAM_WARNING_LOG1(0, OAM_SF_ANY, "wal_atcmsrv_ioctl_get_chipcheck_time:[%d]",ul_chipcheck_total_time_etc);
+    OAM_WARNING_LOG1(0, OAM_SF_ANY, "wal_atcmsrv_ioctl_get_chipcheck_time:[%d]",ull_chipcheck_total_time_etc);
     return OAL_SUCC;
 }
 
@@ -1957,6 +1957,12 @@ OAL_STATIC oal_int32 wal_atcmsrv_ioctl_get_pd_tran_param(oal_net_device_stru *ps
 
     OAM_WARNING_LOG1(0, 0, "wal_atcmsrv_ioctl_get_pd_tran_param::s_pd_param end element is %d", c_pd_param[WAL_ATCMDSRV_NV_WINVRAM_LENGTH-1]);
 
+    if (ul_param_num >= WLAN_CFG_DTS_NVRAM_END)
+    {
+        OAM_ERROR_LOG1(0, 0, "wal_atcmsrv_ioctl_get_pd_tran_param::num[%d] larger than array_row", ul_param_num);
+        return OAL_FAIL;
+    }
+
     pc_pd_info = (oal_int8 *)hwifi_get_nvram_param(ul_param_num);
     if (NULL == pc_pd_info)
     {
@@ -1964,7 +1970,7 @@ OAL_STATIC oal_int32 wal_atcmsrv_ioctl_get_pd_tran_param(oal_net_device_stru *ps
         return OAL_FAIL;
     }
 
-    oal_memcopy(c_pd_param, pc_pd_info, OAL_STRLEN(pc_pd_info));
+    oal_memcopy(c_pd_param, pc_pd_info, OAL_MIN(WAL_ATCMDSRV_NV_WINVRAM_LENGTH, CUS_PARAMS_LEN_MAX));
 
     OAL_IO_PRINT("wal_atcmsrv_ioctl_get_pd_tran_param::pd_param is %s", c_pd_param);
     return l_ret;
@@ -2004,12 +2010,12 @@ OAL_STATIC oal_int32 wal_atcmdsrv_ioctl_pcie_ip_test(oal_net_device_stru *pst_ne
 OAL_STATIC oal_int32 wal_atcmdsrv_ioctl_dyn_intervel_set(oal_net_device_stru *pst_net_dev, oal_int8 *c_dyn_intv)
 {
     oal_int32     l_ret = -1;
-    oal_int8      c_dyn_cmd[2][19] = {"2g_dscr_interval  ", "5g_dscr_interval  "};
+    oal_int8      c_dyn_cmd[WAL_ATCMDSRV_WIFI_CHAN_NUM][WAL_ATCMDSRV_DYN_INTVAL_LEN] = {"2g_dscr_interval  ", "5g_dscr_interval  "};
     oal_int8      c_i = 0;
 
-    for (c_i = 0; c_i < 2; c_i++)
+    for (c_i = 0; c_i < WAL_ATCMDSRV_WIFI_CHAN_NUM; c_i++)
     {
-        c_dyn_cmd[c_i][17] = c_dyn_intv[c_i];
+        c_dyn_cmd[c_i][WAL_ATCMDSRV_DYN_INTVAL_LOCATION] = c_dyn_intv[c_i];
         l_ret = (oal_int32)wal_hipriv_dyn_cali_cfg(pst_net_dev, &c_dyn_cmd[c_i][0]);
         if (l_ret != OAL_SUCC)
         {
@@ -2438,7 +2444,7 @@ oal_int32 wal_atcmdsrv_wifi_priv_cmd_etc(oal_net_device_stru *pst_net_dev, oal_i
             }
             break;
          case WAL_ATCMDSRV_IOCTL_CMD_CHIPCHECK_TIME:
-            l_ret = wal_atcmsrv_ioctl_get_chipcheck_time(pst_net_dev,&st_priv_cmd.pri_data.l_chipcheck_time);
+            l_ret = wal_atcmsrv_ioctl_get_chipcheck_time(pst_net_dev,&st_priv_cmd.pri_data.ull_chipcheck_time);
             if(oal_copy_to_user(pst_ifr->ifr_data,&st_priv_cmd,sizeof(wal_atcmdsrv_wifi_priv_cmd_stru)))
             {
                 OAM_ERROR_LOG0(0, OAM_SF_ANY,"wal_atcmdsrv_wifi_priv_cmd_etc:Failed to copy ioctl_data to user !");

@@ -3579,6 +3579,7 @@ int32 hi11xx_get_android_build_variant(void)
 {
     return hi11xx_android_variant;
 }
+EXPORT_SYMBOL(hi11xx_get_android_build_variant);
 
 int32 hisi_wifi_platform_register_drv(void)
 {

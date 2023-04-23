@@ -244,7 +244,7 @@ oal_uint32  hmac_user_init(hmac_user_stru *pst_hmac_user)
     /* 清除usr统计信息 */
     oam_stats_clear_user_stat_info(pst_hmac_user->st_user_base_info.us_assoc_id);
 #endif
-
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     pst_hmac_user->ul_first_add_time = (oal_uint32)OAL_TIME_GET_STAMP_MS();
 
     return OAL_SUCC;
@@ -433,12 +433,12 @@ oal_uint32  hmac_user_del(mac_vap_stru *pst_mac_vap, hmac_user_stru *pst_hmac_us
     oal_uint16                      us_len;
 #endif
 
-    if (OAL_UNLIKELY((OAL_PTR_NULL == pst_mac_vap) || (OAL_PTR_NULL == pst_hmac_user)))
-    {
+    if (OAL_UNLIKELY((OAL_PTR_NULL == pst_mac_vap) || (OAL_PTR_NULL == pst_hmac_user))) {
         OAM_ERROR_LOG2(0, OAM_SF_UM, "{hmac_user_del::param null,%d %d.}", pst_mac_vap, pst_hmac_user);
         return OAL_ERR_CODE_PTR_NULL;
     }
 
+    pst_hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
     pst_mac_user = (mac_user_stru*)(&pst_hmac_user->st_user_base_info);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_mac_user))
     {
@@ -596,10 +596,9 @@ oal_uint32  hmac_user_del(mac_vap_stru *pst_mac_vap, hmac_user_stru *pst_hmac_us
         FRW_TIMER_IMMEDIATE_DESTROY_TIMER(&pst_hmac_user->st_mgmt_timer);
     }
 
-    if (pst_hmac_user->st_defrag_timer.en_is_registerd == OAL_TRUE)
-    {
-        FRW_TIMER_IMMEDIATE_DESTROY_TIMER(&pst_hmac_user->st_defrag_timer);
-    }
+    // 删除user流程中清除user下的分片缓存
+    hmac_user_clear_defrag_res(pst_hmac_user);
+
 #ifdef _PRE_WLAN_FEATURE_WMMAC
 #if defined(_PRE_PRODUCT_ID_HI110X_HOST)
     /*删除user时删除发送addts req超时定时器*/
@@ -1250,6 +1249,26 @@ hmac_user_stru  *mac_vap_get_hmac_user_by_addr(mac_vap_stru *pst_mac_vap, oal_ui
         OAM_ERROR_LOG0(0, OAM_SF_ANY, "{mac_vap_get_hmac_user_by_addr::user ptr null.}");
     }
     return pst_hmac_user;
+}
+
+// 清除user下的分片缓存，防止重关联或者rekey流程报文重组攻击
+void hmac_user_clear_defrag_res(hmac_user_stru *hmac_user)
+{
+    if (hmac_user == NULL) {
+        return;
+    }
+    OAM_WARNING_LOG2(hmac_user->st_user_base_info.uc_vap_id, OAM_SF_ASSOC,
+        "{hmac_user_clear_defrag_res :: timer[%d] netbuf NULL[%d] .}",
+        hmac_user->st_defrag_timer.en_is_registerd, (hmac_user->pst_defrag_netbuf == NULL));
+
+    if (hmac_user->st_defrag_timer.en_is_registerd == OAL_TRUE) {
+        FRW_TIMER_IMMEDIATE_DESTROY_TIMER(&hmac_user->st_defrag_timer);
+    }
+
+    if (hmac_user->pst_defrag_netbuf != NULL) {
+        oal_netbuf_free(hmac_user->pst_defrag_netbuf);
+        hmac_user->pst_defrag_netbuf = NULL;
+    }
 }
 
 /*lint -e19*/

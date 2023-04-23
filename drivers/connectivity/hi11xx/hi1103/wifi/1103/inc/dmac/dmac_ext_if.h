@@ -925,6 +925,7 @@ typedef struct
     oal_bool_enum_uint8     en_dot11FortyMHzOperationImplemented;         /* dot11FortyMHzOperationImplemented */
     oal_uint8               auc_resv;
     dmac_set_rate_stru      st_min_rate;          /* Update join req 需要配置的速率集参数 */
+    mac_ap_type_enum_uint16 en_ap_type;
 }dmac_ctx_join_req_set_reg_stru;
 
 /* wait join写寄存器参数的结构体定义 */

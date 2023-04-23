@@ -440,14 +440,16 @@ oal_uint32 hmac_mgmt_encap_asoc_req_sta_etc(hmac_vap_stru *pst_hmac_sta, oal_uin
 #endif
 
 #ifdef _PRE_WLAN_FEATURE_OPMODE_NOTIFY
-        pst_hmac_user = mac_res_get_hmac_user_etc(pst_mac_vap->us_assoc_vap_id);
-        if((!(pst_hmac_user->en_user_ap_type & MAC_AP_TYPE_160M_OP_MODE)) &&
-           (OAL_TRUE == pst_mac_vap->st_cap_flag.bit_opmode))
-        {
-            mac_set_opmode_notify_ie_etc((oal_void *)pst_mac_vap, puc_req_frame, &uc_ie_len);
-            puc_req_frame += uc_ie_len;
-        }
+    pst_hmac_user = mac_res_get_hmac_user_etc(pst_mac_vap->us_assoc_vap_id);
+    if((!(pst_hmac_user->en_user_ap_type & MAC_AP_TYPE_160M_OP_MODE)) &&
+       (OAL_TRUE == pst_mac_vap->st_cap_flag.bit_opmode))
+    {
+        mac_set_opmode_notify_ie_etc((oal_void *)pst_mac_vap, puc_req_frame, &uc_ie_len);
+        puc_req_frame += uc_ie_len;
+    }
 #endif
+    OAM_WARNING_LOG2(0, OAM_SF_TX, "{hmac_mgmt_encap_asoc_req_sta_etc::bit_opmode[%d] ap_type 160[%d]}\r\n",
+        pst_mac_vap->st_cap_flag.bit_opmode, pst_hmac_user->en_user_ap_type & MAC_AP_TYPE_160M_OP_MODE);
 
 #ifdef _PRE_WLAN_FEATURE_1024QAM
     if((OAL_PTR_NULL != pst_scaned_bss) && (OAL_TRUE == pst_scaned_bss->st_bss_dscr_info.en_support_1024qam))

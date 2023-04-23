@@ -89,15 +89,18 @@ extern oal_uint16  hmac_mgmt_encap_delba(
 extern oal_uint32  hmac_mgmt_rx_addba_req(
                        hmac_vap_stru              *pst_hmac_vap,
                        hmac_user_stru             *pst_hmac_user,
-                       oal_uint8                  *puc_payload);
+                       oal_uint8                  *puc_payload,
+                       oal_uint32                  frame_body_len);
 extern oal_uint32  hmac_mgmt_rx_addba_rsp(
                        hmac_vap_stru              *pst_hmac_vap,
                        hmac_user_stru             *pst_hmac_user,
-                       oal_uint8                  *puc_payload);
+                       oal_uint8                  *puc_payload,
+                       oal_uint32                  frame_body_len);
 extern oal_uint32  hmac_mgmt_rx_delba(
                        hmac_vap_stru              *pst_hmac_vap,
                        hmac_user_stru             *pst_hmac_user,
-                       oal_uint8                  *puc_payload);
+                       oal_uint8                  *puc_payload,
+                       oal_uint32                  frame_body_len);
 extern oal_uint32  hmac_mgmt_tx_addba_req(
                        hmac_vap_stru              *pst_hmac_vap,
                        hmac_user_stru             *pst_hmac_user,

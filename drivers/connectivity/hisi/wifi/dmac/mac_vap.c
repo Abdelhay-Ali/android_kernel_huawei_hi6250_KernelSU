@@ -3831,29 +3831,12 @@ oal_uint32 mac_vap_set_default_mgmt_key(mac_vap_stru *pst_mac_vap, oal_uint8 uc_
 void mac_vap_init_user_security_port(mac_vap_stru  *pst_mac_vap,
                                         mac_user_stru *pst_mac_user)
 {
-    mac_user_set_port(pst_mac_user, OAL_TRUE);
-
-    if (OAL_TRUE != pst_mac_vap->pst_mib_info->st_wlan_mib_privacy.en_dot11RSNAActivated)
-    {
-        return;
-    }
-
-    /* 是否采用WPA 或WPA2 加密方式 */
-    if ((OAL_TRUE != pst_mac_vap->st_cap_flag.bit_wpa)
-        && (OAL_TRUE != pst_mac_vap->st_cap_flag.bit_wpa2))
-    {
-        return;
-    }
-
-    /* STA需要检测是否采用802.1X 认证方式 */
-    if ((WLAN_VAP_MODE_BSS_STA == pst_mac_vap->en_vap_mode
-        && OAL_TRUE == mac_check_auth_policy(pst_mac_vap->pst_mib_info, WLAN_AUTH_SUITE_1X))
-        || (WLAN_VAP_MODE_BSS_AP == pst_mac_vap->en_vap_mode))
-    {
+    /* 加密false,不加密true */
+    if (mac_mib_get_rsnaactivated(pst_mac_vap) == OAL_TRUE) {
         mac_user_set_port(pst_mac_user, OAL_FALSE);
+    } else {
+        mac_user_set_port(pst_mac_user, OAL_TRUE);
     }
-
-    //mac_user_init_key(pst_mac_user);
 }
 
 

@@ -299,6 +299,9 @@ oal_uint32 hmac_config_11i_add_key(mac_vap_stru *pst_mac_vap, oal_uint16 us_len,
         return OAL_ERR_CODE_SECURITY_USER_INVAILD;
     }
 
+    // add_key流程中清除user下的分片缓存，防止重关联或者rekey流程报文重组攻击
+    hmac_user_clear_defrag_res(pst_hmac_user);
+
 #ifdef _PRE_WLAN_FEATURE_WAPI
     /* 11i的情况下，关掉wapi端口 */
     hmac_wapi_reset_port(&pst_hmac_user->st_wapi);

@@ -99,7 +99,6 @@ enum WAL_ATCMDSRV_IOCTL_CMD
 #define WAL_ATCMDSRV_WIFI_MIN_TXPOWER             5     /*单位:dBm */
 #define WAL_ATCMDSRV_WIFI_MAX_TXPOWER             14    /*单位:dBm */
 
-
 /*****************************************************************************
   3 枚举定义
 *****************************************************************************/
@@ -224,7 +223,7 @@ typedef struct wal_atcmdsrv_wifi_priv_cmd_etc {
     oal_int32 l_pm_switch;
     oal_int32 l_rx_rssi;
     oal_int32 l_chipcheck_result;
-    oal_uint64 l_chipcheck_time;
+    oal_uint64 ull_chipcheck_time;
     oal_int32 l_uart_loop_set;
     oal_int32 l_wifi_chan_loop_set;
     oal_int32 l_efuse_check_result;

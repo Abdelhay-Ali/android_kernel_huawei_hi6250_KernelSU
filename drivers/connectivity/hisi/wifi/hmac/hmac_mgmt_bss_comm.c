@@ -884,7 +884,8 @@ oal_uint32  hmac_mgmt_tx_delba(
 oal_uint32  hmac_mgmt_rx_addba_req(
                 hmac_vap_stru              *pst_hmac_vap,
                 hmac_user_stru             *pst_hmac_user,
-                oal_uint8                  *puc_payload)
+                oal_uint8                  *puc_payload,
+                oal_uint32                  frame_body_len)
 {
     mac_device_stru                *pst_device;
     mac_vap_stru                   *pst_mac_vap;
@@ -899,7 +900,10 @@ oal_uint32  hmac_mgmt_rx_addba_req(
         OAM_ERROR_LOG3(0, OAM_SF_BA, "{hmac_mgmt_rx_addba_req::addba req receive failed, null param, 0x%x 0x%x 0x%x.}", pst_hmac_vap, pst_hmac_user, puc_payload);
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+    if (frame_body_len < MAC_ADDBA_REQ_FRAME_BODY_LEN) {
+        OAM_WARNING_LOG1(0, OAM_SF_BA, "{frame_body_len[%d] < MAC_ADDBA_REQ_FRAME_BODY_LEN.}", frame_body_len);
+        return OAL_FAIL;
+    }
     pst_mac_vap = &(pst_hmac_vap->st_vap_base_info);
 
     /* 11n以上能力才可接收ampdu */
@@ -1047,7 +1051,8 @@ oal_uint32  hmac_mgmt_rx_addba_req(
 oal_uint32  hmac_mgmt_rx_addba_rsp(
                 hmac_vap_stru              *pst_hmac_vap,
                 hmac_user_stru             *pst_hmac_user,
-                oal_uint8                  *puc_payload)
+                oal_uint8                  *puc_payload,
+                oal_uint32                  frame_body_len)
 {
     mac_device_stru            *pst_mac_device;
     mac_vap_stru               *pst_mac_vap;
@@ -1066,7 +1071,10 @@ oal_uint32  hmac_mgmt_rx_addba_rsp(
         OAM_ERROR_LOG3(0, OAM_SF_BA, "{hmac_mgmt_rx_addba_rsp::null param, %d %d %d.}", pst_hmac_vap, pst_hmac_user, puc_payload);
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+    if (frame_body_len < MAC_ADDBA_RSP_FRAME_BODY_LEN) {
+        OAM_WARNING_LOG1(0, OAM_SF_BA, "{frame_body_len[%d] < MAC_ADDBA_REQ_FRAME_BODY_LEN.}", frame_body_len);
+        return OAL_FAIL;
+    }
     pst_mac_vap = &(pst_hmac_vap->st_vap_base_info);
 
     /* 获取device结构 */
@@ -1211,7 +1219,8 @@ oal_uint32  hmac_mgmt_rx_addba_rsp(
 oal_uint32  hmac_mgmt_rx_delba(
                 hmac_vap_stru    *pst_hmac_vap,
                 hmac_user_stru   *pst_hmac_user,
-                oal_uint8        *puc_payload)
+                oal_uint8        *puc_payload,
+                oal_uint32        frame_body_len)
 {
     frw_event_mem_stru           *pst_event_mem;      /* 申请事件返回的内存指针 */
     frw_event_stru               *pst_hmac_to_dmac_crx_sync;
@@ -1227,7 +1236,10 @@ oal_uint32  hmac_mgmt_rx_delba(
         OAM_ERROR_LOG3(0, OAM_SF_BA, "{hmac_mgmt_rx_delba::null param, %d %d %d.}", pst_hmac_vap, pst_hmac_user, puc_payload);
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+    if (frame_body_len < MAC_ADDBA_DEL_FRAME_BODY_LEN) {
+        OAM_WARNING_LOG1(0, OAM_SF_BA, "{frame_body_len[%d] < MAC_ADDBA_DEL_FRAME_BODY_LEN.}", frame_body_len);
+        return OAL_FAIL;
+    }
     /* 获取device结构 */
     pst_device = mac_res_get_dev(pst_hmac_vap->st_vap_base_info.uc_device_id);
     if (OAL_UNLIKELY(OAL_PTR_NULL == pst_device))
@@ -2693,6 +2705,7 @@ oal_void  hmac_send_mgmt_to_host(hmac_vap_stru  *pst_hmac_vap,
     dmac_rx_ctl_stru        *pst_rx_ctrl;
 #endif
     oal_uint8*               pst_mgmt_data;
+    oal_uint32               ret;
 
     pst_mac_device = mac_res_get_dev(pst_hmac_vap->st_vap_base_info.uc_device_id);
     if (OAL_PTR_NULL == pst_mac_device)
@@ -2793,7 +2806,10 @@ oal_void  hmac_send_mgmt_to_host(hmac_vap_stru  *pst_hmac_vap,
 #endif
 
     /* 分发事件 */
-    frw_event_dispatch_event(pst_event_mem);
+    ret = frw_event_dispatch_event(pst_event_mem);
+    if (ret != OAL_SUCC) {
+        oal_free(pst_mgmt_data);
+    }
     FRW_EVENT_FREE(pst_event_mem);
 
 }

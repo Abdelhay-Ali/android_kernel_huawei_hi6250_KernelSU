@@ -389,22 +389,29 @@ oal_tcp_ack_type_enum_uint8 hmac_tcp_opt_get_tcp_ack_type(hmac_vap_stru    *pst_
 }
 
 
-oal_bool_enum_uint8 hmac_judge_rx_netbuf_is_tcp_ack(mac_llc_snap_stru *pst_snap)
+oal_bool_enum_uint8 hmac_judge_rx_netbuf_is_tcp_ack(mac_llc_snap_stru *pst_snap, oal_uint32 buf_len)
 {
     oal_ip_header_stru  *pst_ip_hdr;
     oal_bool_enum_uint8 en_is_tcp_ack = OAL_FALSE;
     oal_tcp_header_stru    *pst_tcp_hdr;
 
-    if(OAL_PTR_NULL == pst_snap)
+    if(OAL_PTR_NULL == pst_snap || buf_len == 0)
     {
         OAM_ERROR_LOG0(0, OAM_SF_RX, "{hmac_judge_rx_netbuf_is_tcp_ack:  pst_snap is null!}");
+        return OAL_FALSE;
+    }
+    if (buf_len < sizeof(mac_llc_snap_stru)) {
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "{hmac_judge_rx_netbuf_is_tcp_ack:buf_len[%d].}", buf_len);
         return OAL_FALSE;
     }
     switch (pst_snap->us_ether_type)
     {
         /*lint -e778*//* 屏蔽Info -- Constant expression evaluates to 0 in operation '&' */
         case OAL_HOST2NET_SHORT(ETHER_TYPE_IP):
-
+            if (buf_len < sizeof(mac_llc_snap_stru) + sizeof(oal_ip_header_stru)) {
+                OAM_ERROR_LOG1(0, OAM_SF_ANY, "{hmac_judge_rx_netbuf_is_tcp_ack:buf_len[%d].}", buf_len);
+                return OAL_FALSE;
+            }
             pst_ip_hdr = (oal_ip_header_stru *)(pst_snap + 1);      /* 偏移一个snap，取ip头 */
 
 #ifdef _PRE_WLAN_TCP_OPT_DEBUG
@@ -412,6 +419,10 @@ oal_bool_enum_uint8 hmac_judge_rx_netbuf_is_tcp_ack(mac_llc_snap_stru *pst_snap)
 #endif
             if (MAC_TCP_PROTOCAL == pst_ip_hdr->uc_protocol)
             {
+                if (buf_len < sizeof(mac_llc_snap_stru) + sizeof(oal_ip_header_stru) + sizeof(oal_tcp_header_stru)) {
+                    OAM_ERROR_LOG1(0, OAM_SF_ANY, "{hmac_judge_rx_netbuf_is_tcp_ack:buf_len[%d].}", buf_len);
+                    return OAL_FALSE;
+                }
                 if (OAL_TRUE == oal_netbuf_is_tcp_ack(pst_ip_hdr))
                 {
                     pst_tcp_hdr = (oal_tcp_header_stru *)(pst_ip_hdr + 1);
@@ -444,11 +455,8 @@ oal_bool_enum_uint8 hmac_judge_rx_netbuf_is_tcp_ack(mac_llc_snap_stru *pst_snap)
 }
 
 
-oal_bool_enum_uint8 hmac_judge_rx_netbuf_classify(oal_netbuf_stru *pst_netbuff)
+oal_bool_enum_uint8 hmac_judge_rx_netbuf_classify(mac_llc_snap_stru *pst_snap, oal_uint32 buf_len)
 {
-    mac_llc_snap_stru             *pst_snap;
-
-    pst_snap = (mac_llc_snap_stru *)(pst_netbuff);
     if(OAL_PTR_NULL == pst_snap)
     {
         return OAL_FALSE;
@@ -456,7 +464,7 @@ oal_bool_enum_uint8 hmac_judge_rx_netbuf_classify(oal_netbuf_stru *pst_netbuff)
 #ifdef _PRE_WLAN_TCP_OPT_DEBUG
     OAM_WARNING_LOG1(0,OAM_SF_ANY,"**hmac_judge_rx_netbuf_classify, us_ether_type = %d**",pst_snap->us_ether_type);
 #endif
-    return hmac_judge_rx_netbuf_is_tcp_ack(pst_snap);
+    return hmac_judge_rx_netbuf_is_tcp_ack(pst_snap, buf_len);
 }
 
 
@@ -518,11 +526,16 @@ oal_tcp_ack_type_enum_uint8  hmac_tcp_opt_rx_get_tcp_ack(oal_netbuf_stru *skb, h
     oal_tcp_header_stru *pst_tcp_hdr;
     mac_llc_snap_stru             *pst_snap;
     hmac_rx_ctl_stru                   *pst_rx_ctrl;                        /* 指向MPDU控制块信息的指针 */
-
+    oal_uint32 buf_len = OAL_NETBUF_LEN(skb);
     pst_rx_ctrl = (hmac_rx_ctl_stru *)oal_netbuf_cb(skb);
+    if (buf_len < pst_rx_ctrl->st_rx_info.uc_mac_header_len) {
+        OAM_ERROR_LOG1(0, OAM_SF_ANY, "{hmac_tcp_opt_rx_get_tcp_ack:buf_len[%d].}", buf_len);
+        return TCP_TYPE_ERROR;
+    }
+    buf_len -= pst_rx_ctrl->st_rx_info.uc_mac_header_len;
     pst_snap = (mac_llc_snap_stru*)(skb->data + pst_rx_ctrl->st_rx_info.uc_mac_header_len);
 
-    if(OAL_FALSE == hmac_judge_rx_netbuf_is_tcp_ack(pst_snap))
+    if(OAL_FALSE == hmac_judge_rx_netbuf_is_tcp_ack(pst_snap, buf_len))
     {
 #ifdef _PRE_WLAN_TCP_OPT_DEBUG
         /* not tcp ack data */

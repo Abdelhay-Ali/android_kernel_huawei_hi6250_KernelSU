@@ -5863,7 +5863,7 @@ OAL_STATIC oal_void  dmac_config_report_efuse_reg(mac_vap_stru *pst_mac_vap)
 
 #endif
 
-OAL_STATIC oal_uint32  dmac_config_pcie_pm_level(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
+oal_uint32  dmac_config_pcie_pm_level(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
 {
 #if (_PRE_PRODUCT_ID == _PRE_PRODUCT_ID_HI1151)
     mac_cfg_pcie_pm_level_stru      *pst_pcie_pm_level;
@@ -7357,6 +7357,10 @@ OAL_STATIC oal_uint32  dmac_config_del_vap(mac_vap_stru *pst_mac_vap, oal_uint8 
 #if(_PRE_WLAN_FEATURE_PMF == _PRE_PMF_HW_CCMP_BIP)
     pst_dmac_vap->ul_user_pmf_status = 0;
 #endif /* #if(_PRE_WLAN_FEATURE_PMF == _PRE_PMF_HW_CCMP_BIP) */
+    // 删除CSA保护定时器
+    if (g_csa_stop_timer.en_is_registerd) {
+        FRW_TIMER_DESTROY_TIMER(&g_csa_stop_timer);
+    }
 
 #ifdef _PRE_WLAN_FEATURE_P2P
     pst_del_vap_param = (mac_cfg_del_vap_param_stru *)puc_param;
@@ -10058,6 +10062,15 @@ oal_uint32 dmac_config_customize_info(mac_vap_stru *pst_mac_vap, oal_uint8 uc_le
 }
 #endif /* #ifdef _PRE_PLAT_FEATURE_CUSTOMIZE */
 
+/* 设置分片过滤调试命令 */
+OAL_STATIC oal_uint32 dmac_config_rx_filter_frag(mac_vap_stru *pst_mac_vap, oal_uint8 uc_len, oal_uint8 *puc_param)
+{
+    g_rx_filter_frag = !!(*puc_param);
+    OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{dmac_config_rx_filter_frag::filter frag[%d].}",
+        g_rx_filter_frag);
+    return OAL_SUCC;
+}
+
 /*****************************************************************************
     HMAC到DMAC配置同步事件操作函数表
 *****************************************************************************/
@@ -10191,7 +10204,7 @@ OAL_STATIC OAL_CONST dmac_config_syn_stru g_ast_dmac_config_syn[] =
     {WLAN_CFGID_SET_ALWAYS_TX_1102,{0, 0},              dmac_config_set_always_tx_1102},
 #endif
     {WLAN_CFGID_SET_ALWAYS_RX,     {0, 0},              dmac_config_set_always_rx},
-    {WLAN_CFGID_PCIE_PM_LEVEL,     {0, 0},              dmac_config_pcie_pm_level},
+    {WLAN_CFGID_RX_FILTER_FRAG,    {0, 0},              dmac_config_rx_filter_frag},
     {WLAN_CFGID_REG_INFO,          {0, 0},              dmac_config_reg_info},
 
 #if (defined(_PRE_PRODUCT_ID_HI110X_DEV) || defined(_PRE_PRODUCT_ID_HI110X_HOST))

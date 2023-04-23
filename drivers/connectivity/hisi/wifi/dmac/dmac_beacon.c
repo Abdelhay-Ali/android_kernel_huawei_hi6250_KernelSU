@@ -2340,7 +2340,9 @@ oal_uint32  dmac_sta_up_rx_beacon(
     }
 
     /* 信道切换处理 */
-    dmac_chan_update_csw_info(pst_mac_vap, puc_payload, us_msg_len);
+    if (!pst_mac_vap->st_ch_switch_info.uc_switch_fail) {
+        dmac_chan_update_csw_info(pst_mac_vap, puc_payload, us_msg_len);
+    }
 
     if ((OAL_TRUE == dmac_sta_edca_is_changed(pst_mac_vap, puc_payload, us_msg_len)) ||
         (OAL_TRUE == dmac_sta_11ntxbf_is_changed(pst_mac_user, puc_payload, us_msg_len)))

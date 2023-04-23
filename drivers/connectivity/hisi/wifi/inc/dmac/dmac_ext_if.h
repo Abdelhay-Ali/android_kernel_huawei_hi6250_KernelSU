@@ -1123,7 +1123,7 @@ typedef struct
     oal_uint8               uc_procd_netbuf_nums;         /* 当前MPDU中已处理的netbuf的数目 */
     oal_uint8               uc_procd_msdu_nums_in_mpdu;   /* 当前MPDU中已处理的MSDU数目 */
 
-    oal_uint8               uc_flag;
+    oal_uint8               is_first_buffer;
 }dmac_msdu_proc_state_stru;
 
 /* 每一个MSDU包含的内容的结构体的定义 */

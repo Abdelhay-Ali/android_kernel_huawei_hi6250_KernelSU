@@ -378,9 +378,14 @@ oal_uint8 *mac_find_p2p_attribute(oal_uint8 uc_eid, oal_uint8 *puc_ies, oal_int3
         puc_ies += l_ie_len + MAC_P2P_ATTRIBUTE_HDR_LEN;
     }
 
+    //HWPSIRT-2021-51176
+    if (l_len < MAC_P2P_ATTRIBUTE_HDR_LEN) {
+        return OAL_PTR_NULL;
+    }
+
     /* 查找到P2P IE，剩余长度不匹配直接返回空指针 */
     l_ie_len = (oal_int32)((puc_ies[2] << 8) + puc_ies[1]);
-    if ((l_len < MAC_P2P_ATTRIBUTE_HDR_LEN) || (l_len < (MAC_P2P_ATTRIBUTE_HDR_LEN + l_ie_len)))
+    if (l_len < (MAC_P2P_ATTRIBUTE_HDR_LEN + l_ie_len))
     {
         return OAL_PTR_NULL;
     }

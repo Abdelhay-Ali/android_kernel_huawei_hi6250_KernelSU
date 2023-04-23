@@ -1341,7 +1341,25 @@ oal_uint32  dmac_tid_resume(hal_to_dmac_device_stru *pst_hal_device, dmac_tid_st
 
     return OAL_SUCC;
 }
+oal_uint32 dmac_clear_tid_by_rm_ptk_key(mac_vap_stru *pst_mac_vap, mac_user_stru *pst_mac_user)
+{
+    mac_device_stru *pst_mac_device = OAL_PTR_NULL;
 
+#ifdef _PRE_WLAN_FEATURE_ROAM
+    /* 漫游状态tid已经pause,不做清tid动作，防止漫游丢包 */
+    if (pst_mac_vap->en_vap_state == MAC_VAP_STATE_ROAMING) {
+        return OAL_SUCC;
+    }
+#endif
+
+    pst_mac_device = mac_res_get_dev(pst_mac_vap->uc_device_id);
+    if (pst_mac_device == OAL_PTR_NULL) {
+        OAM_ERROR_LOG0(pst_mac_vap->uc_vap_id, OAM_SF_TX, "{dmac_clear_tid_by_rm_ptk_key::pst_mac_device is null.}");
+        return OAL_ERR_CODE_PTR_NULL;
+    }
+
+    return dmac_tid_clear(pst_mac_user, pst_mac_device);
+}
 
 /*lint -e578*//*lint -e19*/
 oal_module_symbol(dmac_tid_get_util_ratio);

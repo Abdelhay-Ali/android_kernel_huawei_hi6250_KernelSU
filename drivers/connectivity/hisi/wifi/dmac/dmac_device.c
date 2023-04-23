@@ -41,6 +41,8 @@ extern "C" {
 #undef  THIS_FILE_ID
 #define THIS_FILE_ID OAM_FILE_ID_DMAC_DEVICE_C
 
+oal_bool_enum_uint8 g_rx_filter_frag = OAL_FALSE;
+
 #ifdef _PRE_WLAN_FEATURE_IP_FILTER
 
 

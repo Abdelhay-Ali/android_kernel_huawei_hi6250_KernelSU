@@ -573,7 +573,7 @@ extern oal_void hmac_tid_clear_etc(mac_vap_stru *pst_mac_vap, hmac_user_stru *ps
 extern hmac_user_stru*  mac_res_get_hmac_user_alloc_etc(oal_uint16 us_idx);
 extern hmac_user_stru*  mac_res_get_hmac_user_etc(oal_uint16 us_idx);
 extern hmac_user_stru  *mac_vap_get_hmac_user_by_addr_etc(mac_vap_stru *pst_mac_vap, oal_uint8  *puc_mac_addr);
-
+extern mac_ap_type_enum_uint16 hmac_compability_ap_tpye_identify_etc(mac_vap_stru *pst_mac_vap, oal_uint8 *puc_mac_addr);
 #ifdef _PRE_WLAN_FEATURE_WAPI
 extern hmac_wapi_stru *hmac_user_get_wapi_ptr_etc(mac_vap_stru *pst_mac_vap, oal_bool_enum_uint8 en_pairwise, oal_uint16 us_pairwise_idx);
 extern oal_uint8  hmac_user_is_wapi_connected_etc(oal_uint8 uc_device_id);

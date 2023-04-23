@@ -1667,6 +1667,7 @@ OAL_STATIC oal_uint32  hmac_roam_connect_to_bss(hmac_roam_info_stru *pst_roam_in
     oal_memcopy(&pst_old_bss->st_channel, &(pst_hmac_vap->st_vap_base_info.st_channel), OAL_SIZEOF(mac_channel_stru));
     oal_memcopy(&pst_old_bss->auc_bssid, &(pst_hmac_vap->st_vap_base_info.auc_bssid), WLAN_MAC_ADDR_LEN);
     pst_old_bss->us_cap_info = pst_hmac_vap->st_vap_base_info.us_assoc_user_cap_info;
+    pst_old_bss->en_ap_type  = pst_hmac_user->en_user_ap_type;
 
     /* ÇÐ»»×´Ì¬ÖÁconnecting */
     hmac_roam_main_change_state(pst_roam_info, ROAM_MAIN_STATE_CONNECTING);

@@ -1295,6 +1295,7 @@ typedef struct
 #ifdef _PRE_WLAN_FEATURE_ROAM
     oal_bool_enum_uint8                 en_roam_blacklist_chip_oui;         /* 不支持roam */
 #endif
+    oal_bool_enum_uint8                 en_txbf_blacklist_chip_oui;         /* 不支持txbf */
 
     oal_int8                            c_ant0_rssi;                        /* 天线0的rssi */
     oal_int8                            c_ant1_rssi;                        /* 天线1的rssi */

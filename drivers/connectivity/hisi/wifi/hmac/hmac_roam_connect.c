@@ -319,16 +319,14 @@ OAL_STATIC oal_uint32  hmac_roam_connect_notify_wpas(hmac_vap_stru *pst_hmac_vap
     hmac_roam_rsp_stru               st_roam_rsp;
     frw_event_mem_stru              *pst_event_mem;
     frw_event_stru                  *pst_event;
-    oal_uint8                       *puc_mgmt_data;
+    oal_uint8                       *puc_mgmt_data = NULL;
+    oal_uint8                       *puc_mgmt_data_req = NULL;
+    oal_uint32                       ret;
 
     oal_memset(&st_roam_rsp, 0, OAL_SIZEOF(hmac_asoc_rsp_stru));
 
     /* 获取AP的mac地址 */
     mac_get_address3(puc_mac_hdr, st_roam_rsp.auc_bssid);
-
-    /* 获取关联请求帧信息 */
-    st_roam_rsp.puc_asoc_req_ie_buff = pst_hmac_vap->puc_asoc_req_ie_buff;
-    st_roam_rsp.ul_asoc_req_ie_len   = pst_hmac_vap->ul_asoc_req_ie_len;
 
     pst_event_mem = FRW_EVENT_ALLOC(OAL_SIZEOF(hmac_roam_rsp_stru));
     if (OAL_PTR_NULL == pst_event_mem)
@@ -337,11 +335,24 @@ OAL_STATIC oal_uint32  hmac_roam_connect_notify_wpas(hmac_vap_stru *pst_hmac_vap
         return OAL_ERR_CODE_ALLOC_MEM_FAIL;
     }
 
+    /* 获取关联请求帧信息 */
+    puc_mgmt_data_req = (oal_uint8*)oal_memalloc(pst_hmac_vap->ul_asoc_req_ie_len);
+    if(OAL_PTR_NULL == puc_mgmt_data_req)
+    {
+        OAM_ERROR_LOG1(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC, "{hmac_handle_asoc_rsp_sta::puc_mgmt_data_req alloc null,size %d.}", pst_hmac_vap->ul_asoc_req_ie_len);
+        FRW_EVENT_FREE(pst_event_mem);
+        return OAL_ERR_CODE_ALLOC_MEM_FAIL;
+    }
+    st_roam_rsp.ul_asoc_req_ie_len = pst_hmac_vap->ul_asoc_req_ie_len;
+    oal_memcopy(puc_mgmt_data_req, (oal_uint8 *)(pst_hmac_vap->puc_asoc_req_ie_buff), pst_hmac_vap->ul_asoc_req_ie_len);
+    st_roam_rsp.puc_asoc_req_ie_buff = puc_mgmt_data_req;
+
     /* 记录关联响应帧的部分内容，用于上报给内核 */
     if (us_msg_len < OAL_ASSOC_RSP_IE_OFFSET)
     {
         OAM_ERROR_LOG1(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC, "{hmac_handle_asoc_rsp_sta::us_msg_len is too short, %d.}",us_msg_len);
         FRW_EVENT_FREE(pst_event_mem);
+        hmac_handle_free_buff(puc_mgmt_data, puc_mgmt_data_req);
         return OAL_ERR_CODE_ALLOC_MEM_FAIL;
     }
 
@@ -350,6 +361,7 @@ OAL_STATIC oal_uint32  hmac_roam_connect_notify_wpas(hmac_vap_stru *pst_hmac_vap
     {
         OAM_ERROR_LOG1(pst_hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC, "{hmac_handle_asoc_rsp_sta::pst_mgmt_data alloc null,size %d.}",(us_msg_len - OAL_ASSOC_RSP_IE_OFFSET));
         FRW_EVENT_FREE(pst_event_mem);
+        hmac_handle_free_buff(puc_mgmt_data, puc_mgmt_data_req);
         return OAL_ERR_CODE_ALLOC_MEM_FAIL;
     }
     st_roam_rsp.ul_asoc_rsp_ie_len   = us_msg_len - OAL_ASSOC_RSP_IE_OFFSET;
@@ -368,7 +380,11 @@ OAL_STATIC oal_uint32  hmac_roam_connect_notify_wpas(hmac_vap_stru *pst_hmac_vap
     oal_memcopy((oal_uint8 *)frw_get_event_payload(pst_event_mem), (oal_uint8 *)&st_roam_rsp, OAL_SIZEOF(hmac_roam_rsp_stru));
 
     /* 分发事件 */
-    frw_event_dispatch_event(pst_event_mem);
+    ret = frw_event_dispatch_event(pst_event_mem);
+    if (ret != OAL_SUCC)
+    {
+        hmac_handle_free_buff(puc_mgmt_data, puc_mgmt_data_req);
+    }
     FRW_EVENT_FREE(pst_event_mem);
     return OAL_SUCC;
 }
@@ -802,6 +818,9 @@ OAL_STATIC oal_uint32 hmac_roam_send_reassoc_req(hmac_roam_info_stru *pst_roam_i
     pst_hmac_vap->ul_asoc_req_ie_len = ul_assoc_len - OAL_ASSOC_REQ_IE_OFFSET - 6;
     oal_memcopy(pst_hmac_vap->puc_asoc_req_ie_buff, OAL_NETBUF_HEADER(pst_assoc_req_frame) + OAL_ASSOC_REQ_IE_OFFSET + 6, pst_hmac_vap->ul_asoc_req_ie_len);
 
+    // 重关联流程中清除user下的分片缓存，防止重关联或者rekey流程报文重组攻击
+    hmac_user_clear_defrag_res(pst_hmac_user);
+
     /* 为填写发送描述符准备参数 */
     pst_tx_ctl                   = (mac_tx_ctl_stru *)oal_netbuf_cb(pst_assoc_req_frame);
     pst_tx_ctl->us_mpdu_len      = (oal_uint16)ul_assoc_len;
@@ -1039,7 +1058,7 @@ OAL_STATIC oal_uint32 hmac_roam_process_assoc_rsp(hmac_roam_info_stru *pst_roam_
 
 OAL_STATIC oal_uint32 hmac_roam_process_action(hmac_roam_info_stru *pst_roam_info, oal_void *p_param)
 {
-    oal_uint32                       ul_ret;
+    oal_uint32                       ul_ret, frame_body_len;
     hmac_vap_stru                   *pst_hmac_vap;
     hmac_user_stru                  *pst_hmac_user;
     dmac_wlan_crx_event_stru        *pst_crx_event;
@@ -1062,6 +1081,11 @@ OAL_STATIC oal_uint32 hmac_roam_process_action(hmac_roam_info_stru *pst_roam_inf
     pst_crx_event  = (dmac_wlan_crx_event_stru *)p_param;
     pst_rx_ctrl    = (hmac_rx_ctl_stru *)oal_netbuf_cb(pst_crx_event->pst_netbuf);
     puc_mac_hdr    = (oal_uint8 *)pst_rx_ctrl->st_rx_info.pul_mac_hdr_start_addr;
+    frame_body_len = hmac_get_frame_body_len(pst_crx_event->pst_netbuf);
+    if (frame_body_len < MAC_ACTION_CATEGORY_AND_CODE_LEN) {
+        OAM_WARNING_LOG1(0, OAM_SF_ROAM, "{hmac_roam_process_action::frame_body_len[%d]}", frame_body_len);
+        return OAL_FAIL;
+    }
     puc_payload    = puc_mac_hdr + pst_rx_ctrl->st_rx_info.uc_mac_header_len;
 
     /* mac地址校验 */
@@ -1085,15 +1109,15 @@ OAL_STATIC oal_uint32 hmac_roam_process_action(hmac_roam_info_stru *pst_roam_inf
         switch(puc_payload[MAC_ACTION_OFFSET_ACTION])
         {
             case MAC_BA_ACTION_ADDBA_REQ:
-                ul_ret = hmac_mgmt_rx_addba_req(pst_hmac_vap, pst_hmac_user, puc_payload);
+                ul_ret = hmac_mgmt_rx_addba_req(pst_hmac_vap, pst_hmac_user, puc_payload, frame_body_len);
                 break;
 
             case MAC_BA_ACTION_ADDBA_RSP:
-                ul_ret = hmac_mgmt_rx_addba_rsp(pst_hmac_vap, pst_hmac_user, puc_payload);
+                ul_ret = hmac_mgmt_rx_addba_rsp(pst_hmac_vap, pst_hmac_user, puc_payload, frame_body_len);
                 break;
 
             case MAC_BA_ACTION_DELBA:
-                ul_ret = hmac_mgmt_rx_delba(pst_hmac_vap, pst_hmac_user, puc_payload);
+                ul_ret = hmac_mgmt_rx_delba(pst_hmac_vap, pst_hmac_user, puc_payload, frame_body_len);
                 break;
 
             default:

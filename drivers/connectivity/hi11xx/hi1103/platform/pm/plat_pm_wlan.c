@@ -170,46 +170,51 @@ void hw_1103_unregister_wifi_dsm_client(void)
 }
 #define LOG_BUF_SIZE 512
 int last_dsm_id = 0;
-int dsm_lost_cnt = 0;
 void hw_1103_dsm_client_notify(int dsm_id, const char *fmt, ...)
 {
     oal_ulong flags;
     char buf[LOG_BUF_SIZE] = {0};
     va_list ap;
+    int size = 0;
 
-    va_start(ap, fmt);
-    oal_spin_lock_irq_save(&g_dsm_wifi_lock, &flags);
-    if(hw_1103_dsm_client && !dsm_client_ocuppy(hw_1103_dsm_client)) {
+    if (hw_1103_dsm_client) {
         if(fmt) {
-            if(last_dsm_id)
-            {
-                int32 ret = 0;
-                int32 count = 0;
-                ret = snprintf(buf + count, LOG_BUF_SIZE - count, "[last=%d,lost=%d]", last_dsm_id, dsm_lost_cnt);
-                if(ret > 0)
-                {
-                    vsnprintf(buf + count, LOG_BUF_SIZE - count, fmt, ap);
-                }
-                last_dsm_id = 0;
-                dsm_lost_cnt = 0;
-            }
-            else
-            {
-                vsnprintf(buf, LOG_BUF_SIZE, fmt, ap);
-            }
-            dsm_client_record(hw_1103_dsm_client, buf);
+           va_start(ap, fmt);
+           size = vsnprintf(buf, LOG_BUF_SIZE, fmt, ap);
+           va_end(ap);
+           if (size < 0) {
+               OAL_IO_PRINT("[E]buf copy failed\n");
+               return;
+           }
         }
+    } else {
+       OAL_IO_PRINT("[E]hw_1103_dsm_client is null\n");
+       return;
+    }
+
+    oal_spin_lock_irq_save(&g_dsm_wifi_lock, &flags);
+    if (!dsm_client_ocuppy(hw_1103_dsm_client)) {
+        dsm_client_record(hw_1103_dsm_client, buf);
         dsm_client_notify(hw_1103_dsm_client, dsm_id);
+        last_dsm_id = dsm_id;
         OAM_ERROR_LOG1(0, OAM_SF_PWR, "wifi dsm_client_notify success,dsm_id=%d", dsm_id);
         OAL_IO_PRINT("[I]wifi dsm_client_notify success,dsm_id=%d[%s]\n", dsm_id, buf);
     } else {
-        OAM_ERROR_LOG1(0, OAM_SF_PWR, "wifi dsm_client_notify failed,dsm_id=%d", dsm_id);
-        OAL_IO_PRINT("[E]wifi dsm_client_notify failed,dsm_id=%d\n", dsm_id);
-        last_dsm_id = dsm_id;
-        dsm_lost_cnt++;
+        OAM_ERROR_LOG2(0, OAM_SF_PWR, "wifi dsm_client_notify failed,last_dsm_id=%d dsm_id=%d", last_dsm_id, dsm_id);
+        OAL_IO_PRINT("[E]wifi dsm_client_notify failed,last_dsm_id=%d dsm_id=%d\n", last_dsm_id, dsm_id);
+        //retry dmd record
+        dsm_client_unocuppy(hw_1103_dsm_client);
+        if (!dsm_client_ocuppy(hw_1103_dsm_client)) {
+            dsm_client_record(hw_1103_dsm_client, buf);
+            dsm_client_notify(hw_1103_dsm_client, dsm_id);
+            OAM_ERROR_LOG1(0, OAM_SF_PWR, "wifi dsm_client_notify success,dsm_id=%d", dsm_id);
+            OAL_IO_PRINT("[I]wifi dsm notify success, dsm_id=%d[%s]\n", dsm_id, buf);
+        } else {
+            OAM_ERROR_LOG1(0, OAM_SF_PWR, "wifi dsm client ocuppy, dsm notify failed, dsm_id=%d", dsm_id);
+            OAL_IO_PRINT("[E]wifi dsm client ocuppy, dsm notify failed, dsm_id=%d\n", dsm_id);
+        }
     }
     oal_spin_unlock_irq_restore(&g_dsm_wifi_lock, &flags);
-    va_end(ap);
 }
 EXPORT_SYMBOL(hw_1103_dsm_client_notify);
 

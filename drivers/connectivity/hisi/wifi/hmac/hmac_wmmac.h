@@ -75,8 +75,10 @@ extern "C" {
   10 º¯ÊıÉùÃ÷
 *****************************************************************************/
 extern oal_uint32 hmac_mgmt_tx_addts_rsp(hmac_vap_stru *pst_hmac_vap,hmac_user_stru *pst_hmac_user, hmac_ba_rx_stru *pst_ba_rx_info, oal_uint8 uc_tid, oal_uint8 uc_status);
-extern oal_uint32 hmac_mgmt_rx_addts_rsp(hmac_vap_stru *pst_hmac_vap, hmac_user_stru *pst_hmac_user, oal_uint8 *puc_payload);
-extern oal_uint32 hmac_mgmt_rx_delts(hmac_vap_stru *pst_hmac_vap,hmac_user_stru *pst_hmac_user, oal_uint8 *puc_payload);
+extern oal_uint32 hmac_mgmt_rx_addts_rsp(hmac_vap_stru *pst_hmac_vap, hmac_user_stru *pst_hmac_user,
+                                         oal_uint8 *puc_payload, oal_uint32 frame_body_len);
+extern oal_uint32 hmac_mgmt_rx_delts(hmac_vap_stru *pst_hmac_vap,hmac_user_stru *pst_hmac_user,
+                                     oal_uint8 *puc_payload, oal_uint32 frame_body_len);
 extern oal_uint32 hmac_mgmt_rx_addts_req_frame(hmac_vap_stru *pst_hmac_vap, oal_netbuf_stru *pst_netbuf);
 extern oal_uint32  hmac_config_addts_req(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);
 extern oal_uint32  hmac_config_delts(mac_vap_stru *pst_mac_vap, oal_uint16 us_len, oal_uint8 *puc_param);

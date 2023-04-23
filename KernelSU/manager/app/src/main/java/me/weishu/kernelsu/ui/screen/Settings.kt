@@ -2,14 +2,21 @@ package me.weishu.kernelsu.ui.screen
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color.Companion.White
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.alorma.compose.settings.ui.*
 import com.ramcosta.composedestinations.annotation.Destination
@@ -20,7 +27,6 @@ import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.BuildConfig
 import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.AboutDialog
-import me.weishu.kernelsu.ui.component.LoadingDialog
 import me.weishu.kernelsu.ui.util.LocalDialogHost
 import me.weishu.kernelsu.ui.util.getBugreportFile
 
@@ -40,10 +46,12 @@ fun SettingScreen(navigator: DestinationsNavigator) {
             })
         }
     ) { paddingValues ->
-        LoadingDialog()
 
         val showAboutDialog = remember { mutableStateOf(false) }
         AboutDialog(showAboutDialog)
+
+        var showLoadingDialog by remember { mutableStateOf(false) }
+        LoadingDialog(showLoadingDialog)
 
         Column(modifier = Modifier.padding(paddingValues)) {
 
@@ -56,11 +64,13 @@ fun SettingScreen(navigator: DestinationsNavigator) {
                 },
                 onClick = {
                     scope.launch {
-                        val bugreport = dialogHost.withLoading {
-                            withContext(Dispatchers.IO) {
-                                getBugreportFile(context)
-                            }
+                        showLoadingDialog = true
+
+                        val bugreport = withContext(Dispatchers.IO) {
+                            getBugreportFile(context)
                         }
+
+                        showLoadingDialog = false
 
                         val uri: Uri =
                             FileProvider.getUriForFile(
@@ -108,4 +118,25 @@ private fun TopBar(onBack: () -> Unit = {}) {
             ) { Icon(Icons.Filled.ArrowBack, contentDescription = null) }
         },
     )
+}
+
+@Composable
+fun LoadingDialog(showLoadingDialog: Boolean) {
+    if (!showLoadingDialog) {
+        return
+    }
+
+    Dialog(
+        onDismissRequest = { },
+        DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(100.dp)
+                .background(White, shape = RoundedCornerShape(8.dp))
+        ) {
+            CircularProgressIndicator()
+        }
+    }
 }

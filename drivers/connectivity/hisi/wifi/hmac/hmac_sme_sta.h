@@ -92,7 +92,7 @@ extern oal_void  hmac_send_rsp_to_sme_ap(hmac_vap_stru *pst_hmac_vap, hmac_ap_sm
  oal_void  hmac_prepare_join_req(hmac_join_req_stru *pst_join_req, mac_bss_dscr_stru *pst_bss_dscr);
  oal_uint32 hmac_sta_update_join_req_params(hmac_vap_stru *pst_hmac_vap, hmac_join_req_stru *pst_join_req);
  oal_uint32  hmac_send_connect_result_to_dmac_sta(hmac_vap_stru *pst_hmac_vap, oal_uint32 ul_result);
-
+extern oal_void hmac_handle_free_buff(oal_uint8 *buf1, oal_uint8 *buf2);
 #ifdef __cplusplus
     #if __cplusplus
         }

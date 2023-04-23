@@ -12752,9 +12752,6 @@ oal_uint32  hmac_config_set_txbf_cap(mac_vap_stru *pst_mac_vap, oal_uint16 us_le
 #endif
     mac_mib_set_VHTSUBeamformeeOptionImplemented(pst_mac_vap, en_rx_switch);
     mac_mib_set_VHTBeamformeeNTxSupport(pst_mac_vap, uc_rx_sts_num);
-#if (WLAN_MU_BFEE_ACTIVED == WLAN_MU_BFEE_ENABLE)
-    mac_mib_set_VHTMUBeamformeeOptionImplemented(pst_mac_vap, en_rx_switch);
-#endif
 
     OAM_WARNING_LOG3(pst_mac_vap->uc_vap_id, OAM_SF_ANY, "{hmac_config_set_txbf_cap::rx_cap[%d], tx_cap[%d], rx_sts_nums[%d].}",
                                 en_rx_switch, en_tx_switch, uc_rx_sts_num);
@@ -12767,6 +12764,42 @@ oal_uint32  hmac_config_set_txbf_cap(mac_vap_stru *pst_mac_vap, oal_uint16 us_le
 
 }
 
+#ifdef _PRE_WLAN_FEATURE_TXBF
+
+oal_uint32 hmac_config_vap_update_txbf_cap_etc(mac_vap_stru *pst_mac_vap, oal_bool_enum_uint8 en_txbf_rx_cap)
+{
+    oal_uint32              ul_ret;
+    oal_uint16              us_len;
+    oal_uint8               uc_rx_sts_num  = 0;
+
+    /* 当前mac device只支持bfee 不支持bfer 当前只处理bfee能力变化，bfer TBD */
+    uc_rx_sts_num = (en_txbf_rx_cap & OAL_TRUE) ? VHT_BFEE_NTX_SUPP_STS_CAP : 1;
+
+#ifdef _PRE_WLAN_FEATURE_TXBF_HT
+    mac_mib_set_ReceiveStaggerSoundingOptionImplemented(pst_mac_vap, en_txbf_rx_cap);
+    mac_mib_set_NumberCompressedBeamformingMatrixSupportAntenna(pst_mac_vap, uc_rx_sts_num);
+    mac_mib_set_ExplicitCompressedBeamformingFeedbackOptionImplemented(pst_mac_vap, en_txbf_rx_cap & WLAN_MIB_HT_ECBF_DELAYED);
+    pst_mac_vap->st_txbf_add_cap.bit_channel_est_cap = en_txbf_rx_cap;
+#endif
+    mac_mib_set_VHTSUBeamformeeOptionImplemented(pst_mac_vap, en_txbf_rx_cap);
+    mac_mib_set_VHTBeamformeeNTxSupport(pst_mac_vap, uc_rx_sts_num);
+
+    OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_TXBF, "hmac_config_vap_update_txbf_cap_etc::vap rx txbf cap[%d].", en_txbf_rx_cap);
+
+    /***************************************************************************
+        抛事件到DMAC层, 同步DMAC数据
+    ***************************************************************************/
+    us_len = OAL_SIZEOF(en_txbf_rx_cap);
+
+    ul_ret = hmac_config_send_event_etc(pst_mac_vap, WLAN_CFGID_TXBF_MIB_UPDATE, us_len, &en_txbf_rx_cap);
+    if (OAL_UNLIKELY(OAL_SUCC != ul_ret))
+    {
+        OAM_WARNING_LOG1(pst_mac_vap->uc_vap_id, OAM_SF_TXBF, "{hmac_config_vap_update_txbf_cap_etc::hmac_config_send_event_etc failed[%d].}", ul_ret);
+    }
+
+    return ul_ret;
+}
+#endif
 
 #if (_PRE_WLAN_FEATURE_BLACKLIST_LEVEL != _PRE_WLAN_FEATURE_BLACKLIST_NONE)
 

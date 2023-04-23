@@ -289,6 +289,10 @@ OAL_STATIC oal_uint16  hmac_mgmt_encap_addts_rsp(hmac_vap_stru     *pst_vap,
     mac_rx_get_sa((mac_ieee80211_frame_stru *)puc_addts_req, &puc_sa);
 
     /* 拷贝整个ADDTS REQ帧 */
+    if (WLAN_MEM_NETBUF_SIZE2 < us_frame_len) {
+        OAM_ERROR_LOG0(0, OAM_SF_ANY, "hmac_mgmt_encap_addts_rsp::memcpy fail!");
+        return 0;
+    }
     oal_memcopy(puc_data, puc_addts_req, us_frame_len);
 
     /* Frame Control Field 中只需要设置Type/Subtype值，其他设置为0 */
@@ -553,7 +557,8 @@ OAL_STATIC oal_uint32  hmac_mgmt_tx_delts(
 oal_uint32  hmac_mgmt_rx_addts_rsp(
                 hmac_vap_stru              *pst_hmac_vap,
                 hmac_user_stru             *pst_hmac_user,
-                oal_uint8                  *puc_payload)
+                oal_uint8                  *puc_payload,
+                oal_uint32                 frame_body_len)
 {
     mac_vap_stru               *pst_mac_vap;
     oal_uint8                   uc_user_prio;
@@ -570,7 +575,10 @@ oal_uint32  hmac_mgmt_rx_addts_rsp(
         OAM_ERROR_LOG3(0, OAM_SF_WMMAC, "{hmac_mgmt_rx_addts_rsp::null param, %p %p %p.}", pst_hmac_vap, pst_hmac_user, puc_payload);
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+    if (frame_body_len < MAC_ADDTS_RSP_FRAME_BODY_LEN) { /* 10个元素长度总和 12  */
+        OAM_WARNING_LOG1(0, OAM_SF_WMMAC, "{hmac_mgmt_rx_addts_rsp::frame_body_len [%d]}", frame_body_len);
+        return OAL_FAIL;
+    }
     pst_mac_vap = &(pst_hmac_vap->st_vap_base_info);
 
     /*************************************************************************/
@@ -663,7 +671,8 @@ oal_uint32  hmac_mgmt_rx_addts_rsp(
 oal_uint32  hmac_mgmt_rx_delts(
                 hmac_vap_stru              *pst_hmac_vap,
                 hmac_user_stru             *pst_hmac_user,
-                oal_uint8                  *puc_payload)
+                oal_uint8                  *puc_payload,
+                oal_uint32                 frame_body_len)
 {
     mac_vap_stru               *pst_mac_vap;
     oal_uint8                   uc_ac_num;
@@ -675,7 +684,10 @@ oal_uint32  hmac_mgmt_rx_delts(
         OAM_ERROR_LOG3(0, OAM_SF_WMMAC, "{hmac_mgmt_rx_delts::null param, %p %p %p.}", pst_hmac_vap, pst_hmac_user, puc_payload);
         return OAL_ERR_CODE_PTR_NULL;
     }
-
+    if (frame_body_len < MAC_DELTS_FRAME_BODY_LEN) {
+        OAM_WARNING_LOG1(0, OAM_SF_WMMAC, "{hmac_mgmt_rx_delts::frame_body_len [%d]}", frame_body_len);
+        return OAL_FAIL;
+    }
     pst_mac_vap = &(pst_hmac_vap->st_vap_base_info);
 
     /*************************************************************************/

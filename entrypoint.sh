@@ -42,12 +42,10 @@ ln -sf "/usr/bin/python${python_version}" /usr/bin/python
 set_output hash "$(cd "$kernel_path" && git rev-parse HEAD || exit 127)"
 
 msg "Installing toolchain..."
-if [[ $arch = "arm64" ]]; then
     arch_opts="ARCH=${arch} SUBARCH=${arch}"
     export ARCH="$arch"
     export SUBARCH="$arch"
 
-    if [[ $compiler = gcc/* ]]; then
         ver_number="${compiler/gcc\/}"
         make_opts=""
         host_make_opts=""
@@ -74,7 +72,7 @@ if [[ $arch = "arm64" ]]; then
         #export CROSS_COMPILE="aarch64-linux-gnu-"
         export CROSS_COMPILE="/github/workspace/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf/bin/aarch64-elf-"
         export CROSS_COMPILE_ARM32="arm-linux-gnueabi-"
-  fi
+  
 
 cd "$workdir"/"$kernel_path" || exit 127
 

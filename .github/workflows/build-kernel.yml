@@ -33,7 +33,7 @@ jobs:
         
     - name: Get current date
       id: date
-      run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      run: echo "::set-output name=date::$(date +'%Y-%m-%d-%I%M')"
 
     - name: Tag snapshot
       uses: tvdias/github-tagger@v0.0.1
@@ -45,7 +45,6 @@ jobs:
       uses: ncipollo/release-action@v1
       with:
         artifacts: ${{ steps.build.outputs.outfile }}
-        #artifacts: "kernel_huawei_hi6250_4.9.319/artifacts/${{ steps.build.outputs.outfile }}"
         token: ${{ secrets.GITHUB_TOKEN }}
         allowUpdates: true
         tag: ${{ steps.date.outputs.date }}

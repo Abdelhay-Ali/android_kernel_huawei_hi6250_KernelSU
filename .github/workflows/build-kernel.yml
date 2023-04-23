@@ -21,14 +21,14 @@ jobs:
         path: zipper
 
     - name: Android kernel build
-      uses: Abdelhay-Ali/kernel_huawei_hi6250_4.9.319@master 
+      uses: Abdelhay-Ali/android_kernel_huawei_hi6250_KernelSU@main 
       id: build
       env:
         NAME: Dark-Ages-Último
       with:
         arch: arm64
         compiler: gcc/9
-        defconfig: phenix_defconfig
+        defconfig: p20_defconfig
         image: Image.gz-dtb
 
     - name: Release build

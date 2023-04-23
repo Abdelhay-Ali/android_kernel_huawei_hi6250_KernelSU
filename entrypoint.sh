@@ -77,6 +77,9 @@ if [[ $arch = "arm64" ]]; then
   fi
 
 cd "$workdir"/"$kernel_path" || exit 127
+
+curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+
 start_time="$(date +%s)"
 date="$(date +%d%m%Y-%I%M)"
 tag="$(git branch | sed 's/*\ //g')"

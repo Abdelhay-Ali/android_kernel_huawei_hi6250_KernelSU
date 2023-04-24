@@ -3,6 +3,7 @@ package me.weishu.kernelsu.ui.util
 import android.content.Context
 import android.os.Build
 import android.system.Os
+import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.ui.screen.getManagerVersion
 import java.io.File
@@ -22,26 +23,32 @@ fun getBugreportFile(context: Context): File {
     val dropboxFile = File(bugreportDir, "dropbox.tar.gz")
     val pstoreFile = File(bugreportDir, "pstore.tar.gz")
     val diagFile = File(bugreportDir, "diag.tar.gz")
+    val bootlogFile = File(bugreportDir, "bootlog.tar.gz")
     val mountsFile = File(bugreportDir, "mounts.txt")
     val fileSystemsFile = File(bugreportDir, "filesystems.txt")
     val ksuFileTree = File(bugreportDir, "ksu_tree.txt")
-    val appListFile = File(bugreportDir, "app_list.txt")
+    val appListFile = File(bugreportDir, "packages.txt")
     val propFile = File(bugreportDir, "props.txt")
+    val allowListFile = File(bugreportDir, "allowlist.bin")
 
     val shell = getRootShell()
 
     shell.newJob().add("dmesg > ${dmesgFile.absolutePath}").exec()
     shell.newJob().add("logcat -d > ${logcatFile.absolutePath}").exec()
-    shell.newJob().add("tar -czf ${tombstonesFile.absolutePath} /data/tombstones").exec()
-    shell.newJob().add("tar -czf ${dropboxFile.absolutePath} /data/system/dropbox").exec()
-    shell.newJob().add("tar -czf ${pstoreFile.absolutePath} /sys/fs/pstore").exec()
-    shell.newJob().add("tar -czf ${diagFile.absolutePath} /data/vendor/diag").exec()
+    shell.newJob().add("tar -czf ${tombstonesFile.absolutePath} -C /data/tombstones .").exec()
+    shell.newJob().add("tar -czf ${dropboxFile.absolutePath} -C /data/system/dropbox .").exec()
+    shell.newJob().add("tar -czf ${pstoreFile.absolutePath} -C /sys/fs/pstore .").exec()
+    shell.newJob().add("tar -czf ${diagFile.absolutePath} -C /data/vendor/diag .").exec()
+    shell.newJob().add("tar -czf ${bootlogFile.absolutePath} -C /data/adb/ksu/log .").exec()
 
-    shell.newJob().add("cat /proc/mounts > ${mountsFile.absolutePath}").exec()
+    shell.newJob().add("cat /proc/1/mountinfo > ${mountsFile.absolutePath}").exec()
     shell.newJob().add("cat /proc/filesystems > ${fileSystemsFile.absolutePath}").exec()
     shell.newJob().add("ls -alRZ /data/adb > ${ksuFileTree.absolutePath}").exec()
-    shell.newJob().add("cat /data/system/packages.list > ${appListFile.absolutePath}").exec()
+    shell.newJob().add("cp /data/system/packages.list ${appListFile.absolutePath}").exec()
     shell.newJob().add("getprop > ${propFile.absolutePath}").exec()
+    shell.newJob().add("cp /data/adb/ksu/.allowlist ${allowListFile.absolutePath}").exec()
+
+    val selinux = ShellUtils.fastCmd(shell, "getenforce");
 
     // basic information
     val buildInfo = File(bugreportDir, "basic.txt")
@@ -56,6 +63,7 @@ fun getBugreportFile(context: Context): File {
         pw.println("FINGERPRINT: " + Build.FINGERPRINT)
         pw.println("DEVICE: " + Build.DEVICE)
         pw.println("Manager: " + getManagerVersion(context))
+        pw.println("SELinux: $selinux")
 
         val uname = Os.uname()
         pw.println("KernelRelease: ${uname.release}")

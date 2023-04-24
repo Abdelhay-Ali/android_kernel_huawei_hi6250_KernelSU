@@ -40,7 +40,6 @@ enum {OD_NORMAL_SAMPLE, OD_SUB_SAMPLE};
 struct dbs_data {
 	struct gov_attr_set attr_set;
 	void *tuners;
-	unsigned int min_sampling_rate;
 	unsigned int ignore_nice_load;
 	unsigned int sampling_rate;
 	unsigned int sampling_down_factor;
@@ -85,7 +84,7 @@ struct policy_dbs_info {
 	 * Per policy mutex that serializes load evaluation from limit-change
 	 * and work-handler.
 	 */
-	struct mutex timer_mutex;
+	struct mutex update_mutex;
 
 	u64 last_sample_time;
 	s64 sample_delay_ns;
@@ -135,7 +134,7 @@ struct dbs_governor {
 	 */
 	struct dbs_data *gdbs_data;
 
-	unsigned int (*gov_dbs_timer)(struct cpufreq_policy *policy);
+	unsigned int (*gov_dbs_update)(struct cpufreq_policy *policy);
 	struct policy_dbs_info *(*alloc)(void);
 	void (*free)(struct policy_dbs_info *policy_dbs);
 	int (*init)(struct dbs_data *dbs_data);

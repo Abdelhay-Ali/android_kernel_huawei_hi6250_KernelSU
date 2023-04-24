@@ -153,8 +153,7 @@ static struct binder_buffer *binder_alloc_prepare_to_free_locked(
 		else {
 			/*
 			 * Guard against user threads attempting to
-			 * free the buffer when in use by kernel or
-			 * after it's already been freed.
+			 * free the buffer twice
 			 */
 			if (!buffer->allow_user_free)
 				return ERR_PTR(-EPERM);
@@ -697,7 +696,7 @@ int binder_alloc_mmap_handler(struct binder_alloc *alloc,
 		goto err_already_mapped;
 	}
 
-	area = get_vm_area(vma->vm_end - vma->vm_start, VM_ALLOC);
+    area = get_vm_area(vma->vm_end - vma->vm_start, VM_ALLOC);
 	if (area == NULL) {
 		ret = -ENOMEM;
 		failure_string = "get_vm_area";

@@ -59,6 +59,7 @@ struct wakeup_source {
 	char app_name[APP_NAME_LEN_MAX];
 #endif
 	struct list_head	entry;
+	struct rcu_head		rcu;
 	spinlock_t		lock;
 	struct wake_irq		*wakeirq;
 	struct timer_list	timer;

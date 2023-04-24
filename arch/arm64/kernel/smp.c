@@ -158,6 +158,7 @@ static int boot_secondary(unsigned int cpu, struct task_struct *idle)
 }
 
 static DECLARE_COMPLETION(cpu_running);
+bool va52mismatch __ro_after_init;
 
 int __cpu_up(unsigned int cpu, struct task_struct *idle)
 {
@@ -187,10 +188,15 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 
 		if (!cpu_online(cpu)) {
 			pr_crit("CPU%u: failed to come online\n", cpu);
+
+			if (IS_ENABLED(CONFIG_ARM64_52BIT_VA) && va52mismatch)
+				pr_crit("CPU%u: does not support 52-bit VAs\n", cpu);
+
 			ret = -EIO;
 		}
 	} else {
 		pr_err("CPU%u: failed to boot: %d\n", cpu, ret);
+		return ret;
 	}
 
 	secondary_data.task = NULL;
@@ -437,17 +443,17 @@ void cpu_die_early(void)
 static void __init hyp_mode_check(void)
 {
 	if (is_hyp_mode_available())
-		pr_info("CPU: All CPU(s) started at EL2\n");
+		pr_debug("CPU: All CPU(s) started at EL2\n");
 	else if (is_hyp_mode_mismatched())
 		WARN_TAINT(1, TAINT_CPU_OUT_OF_SPEC,
 			   "CPU: CPUs started in inconsistent modes");
 	else
-		pr_info("CPU: All CPU(s) started at EL1\n");
+		pr_debug("CPU: All CPU(s) started at EL1\n");
 }
 
 void __init smp_cpus_done(unsigned int max_cpus)
 {
-	pr_info("SMP: Total of %d processors activated.\n", num_online_cpus());
+	pr_debug("SMP: Total of %d processors activated.\n", num_online_cpus());
 	setup_cpu_features();
 	hyp_mode_check();
 	apply_alternatives_all();
@@ -880,8 +886,7 @@ static void ipi_cpu_stop(unsigned int cpu)
 
 	local_irq_disable();
 
-	while (1)
-		cpu_relax();
+	cpu_park_loop();
 }
 
 /*
@@ -984,11 +989,22 @@ void tick_broadcast(const struct cpumask *mask)
 }
 #endif
 
+/*
+ * The number of CPUs online, not counting this CPU (which may not be
+ * fully online and so not counted in num_online_cpus()).
+ */
+static inline unsigned int num_other_online_cpus(void)
+{
+	unsigned int this_cpu_online = cpu_online(smp_processor_id());
+
+	return num_online_cpus() - this_cpu_online;
+}
+
 void smp_send_stop(void)
 {
 	unsigned long timeout;
 
-	if (num_online_cpus() > 1) {
+	if (num_other_online_cpus()) {
 		cpumask_t mask;
 
 		cpumask_copy(&mask, cpu_online_mask);
@@ -1002,10 +1018,10 @@ void smp_send_stop(void)
 
 	/* Wait up to 1 second for other CPUs to stop */
 	timeout = USEC_PER_SEC >> 4;
-	while (num_online_cpus() > 1 && timeout--)
+	while (num_other_online_cpus() && timeout--)
 		udelay(1 << 4);
 
-	if (num_online_cpus() > 1)
+	if (num_other_online_cpus())
 		pr_warning("SMP: failed to stop secondary CPUs %*pbl\n",
 			   cpumask_pr_args(cpu_online_mask));
 }

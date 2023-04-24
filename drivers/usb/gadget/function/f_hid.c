@@ -91,7 +91,7 @@ static struct usb_interface_descriptor hidg_interface_desc = {
 static struct hid_descriptor hidg_desc = {
 	.bLength			= sizeof hidg_desc,
 	.bDescriptorType		= HID_DT_HID,
-	.bcdHID				= 0x0101,
+	.bcdHID				= cpu_to_le16(0x0101),
 	.bCountryCode			= 0x00,
 	.bNumDescriptors		= 0x1,
 	/*.desc[0].bDescriptorType	= DYNAMIC */
@@ -325,6 +325,8 @@ static ssize_t f_hidg_write(struct file *file, const char __user *buffer,
 	hidg->req->length   = count;
 	hidg->req->complete = f_hidg_req_complete;
 	hidg->req->context  = hidg;
+
+	spin_unlock_irqrestore(&hidg->write_spinlock, flags);
 
 	status = usb_ep_queue(hidg->in_ep, hidg->req, GFP_ATOMIC);
 	if (status < 0) {
@@ -883,7 +885,7 @@ static void hidg_free_inst(struct usb_function_instance *f)
 	mutex_lock(&hidg_ida_lock);
 
 	hidg_put_minor(opts->minor);
-	if (idr_is_empty(&hidg_ida.idr))
+	if (ida_is_empty(&hidg_ida))
 		ghid_cleanup();
 
 	mutex_unlock(&hidg_ida_lock);
@@ -909,7 +911,7 @@ static struct usb_function_instance *hidg_alloc_inst(void)
 
 	mutex_lock(&hidg_ida_lock);
 
-	if (idr_is_empty(&hidg_ida.idr)) {
+	if (ida_is_empty(&hidg_ida)) {
 		status = ghid_setup(NULL, HIDG_MINORS);
 		if (status)  {
 			ret = ERR_PTR(status);
@@ -922,7 +924,7 @@ static struct usb_function_instance *hidg_alloc_inst(void)
 	if (opts->minor < 0) {
 		ret = ERR_PTR(opts->minor);
 		kfree(opts);
-		if (idr_is_empty(&hidg_ida.idr))
+		if (ida_is_empty(&hidg_ida))
 			ghid_cleanup();
 		goto unlock;
 	}

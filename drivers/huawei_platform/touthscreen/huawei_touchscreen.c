@@ -6703,7 +6703,7 @@ static void __init ts_virtual_keys_init(void)
 		ret = sysfs_create_group(properties_kobj,
 					 &properties_attr_group);
 	if (!properties_kobj || ret)
-		pr_err("%s: failed to create board_properties!\n", __func__);
+		pr_debug("%s: failed to create board_properties!\n", __func__);
 }
 
 static int try_update_firmware(void)

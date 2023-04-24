@@ -881,6 +881,7 @@ asmlinkage long sys_open_by_handle_at(int mountdirfd,
 				      struct file_handle __user *handle,
 				      int flags);
 asmlinkage long sys_setns(int fd, int nstype);
+asmlinkage long sys_pidfd_open(pid_t pid, unsigned int flags);
 asmlinkage long sys_process_vm_readv(pid_t pid,
 				     const struct iovec __user *lvec,
 				     unsigned long liovcnt,
@@ -919,4 +920,7 @@ asmlinkage long sys_pkey_mprotect(unsigned long start, size_t len,
 asmlinkage long sys_pkey_alloc(unsigned long flags, unsigned long init_val);
 asmlinkage long sys_pkey_free(int pkey);
 
+asmlinkage long sys_pidfd_send_signal(int pidfd, int sig,
+				       siginfo_t __user *info,
+				       unsigned int flags);
 #endif

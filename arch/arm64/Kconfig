@@ -33,6 +33,7 @@ config ARM64
 	select CLONE_BACKWARDS
 	select COMMON_CLK
 	select CPU_PM if (SUSPEND || CPU_IDLE)
+	select CRC32
 	select DCACHE_WORD_ACCESS
 	select EDAC_SUPPORT
 	select FRAME_POINTER
@@ -439,7 +440,7 @@ config ARM64_ERRATUM_1024718
 	help
 	  This option adds work around for Arm Cortex-A55 Erratum 1024718.
 
-	  Affected Cortex-A55 cores (r0p0, r0p1, r1p0) could cause incorrect
+	  Affected Cortex-A55 cores (all revisions) could cause incorrect
 	  update of the hardware dirty bit when the DBM/AP bits are updated
 	  without a break-before-make. The work around is to disable the usage
 	  of hardware DBM locally on the affected cores. CPUs not affected by
@@ -1186,6 +1187,10 @@ config COMPAT
 config SYSVIPC_COMPAT
 	def_bool y
 	depends on COMPAT && SYSVIPC
+
+config KEYS_COMPAT
+	def_bool y
+	depends on COMPAT && KEYS
 
 endmenu
 

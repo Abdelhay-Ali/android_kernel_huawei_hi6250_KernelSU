@@ -124,7 +124,7 @@ int rcu_num_lvls __read_mostly = RCU_NUM_LVLS;
 static int num_rcu_lvl[] = NUM_RCU_LVL_INIT;
 int rcu_num_nodes __read_mostly = NUM_RCU_NODES; /* Total # rcu_nodes in use. */
 /* panic() on RCU Stall sysctl. */
-int sysctl_panic_on_rcu_stall __read_mostly;
+int sysctl_panic_on_rcu_stall __read_mostly = CONFIG_RCU_PANIC_ON_STALL;
 
 /*
  * The rcu_scheduler_active variable is initialized to the value
@@ -1319,7 +1319,8 @@ static void rcu_stall_kick_kthreads(struct rcu_state *rsp)
 	if (!rcu_kick_kthreads)
 		return;
 	j = READ_ONCE(rsp->jiffies_kick_kthreads);
-	if (time_after(jiffies, j) && rsp->gp_kthread) {
+	if (time_after(jiffies, j) && rsp->gp_kthread &&
+	    (rcu_gp_in_progress(rsp) || READ_ONCE(rsp->gp_flags))) {
 		WARN_ONCE(1, "Kicking %s grace-period kthread\n", rsp->name);
 		rcu_ftrace_dump(DUMP_ALL);
 		wake_up_process(rsp->gp_kthread);
@@ -1720,15 +1721,23 @@ static int rcu_future_gp_cleanup(struct rcu_state *rsp, struct rcu_node *rnp)
 }
 
 /*
- * Awaken the grace-period kthread for the specified flavor of RCU.
- * Don't do a self-awaken, and don't bother awakening when there is
- * nothing for the grace-period kthread to do (as in several CPUs
- * raced to awaken, and we lost), and finally don't try to awaken
- * a kthread that has not yet been created.
+ * Awaken the grace-period kthread.  Don't do a self-awaken (unless in
+ * an interrupt or softirq handler), and don't bother awakening when there
+ * is nothing for the grace-period kthread to do (as in several CPUs raced
+ * to awaken, and we lost), and finally don't try to awaken a kthread that
+ * has not yet been created.  If all those checks are passed, track some
+ * debug information and awaken.
+ *
+ * So why do the self-wakeup when in an interrupt or softirq handler
+ * in the grace-period kthread's context?  Because the kthread might have
+ * been interrupted just as it was going to sleep, and just after the final
+ * pre-sleep check of the awaken condition.  In this case, a wakeup really
+ * is required, and is therefore supplied.
  */
 static void rcu_gp_kthread_wake(struct rcu_state *rsp)
 {
-	if (current == rsp->gp_kthread ||
+	if ((current == rsp->gp_kthread &&
+	     !in_interrupt() && !in_serving_softirq()) ||
 	    !READ_ONCE(rsp->gp_flags) ||
 	    !rsp->gp_kthread)
 		return;

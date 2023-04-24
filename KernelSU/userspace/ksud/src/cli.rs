@@ -72,8 +72,6 @@ enum Debug {
     /// Get kernel version
     Version,
 
-    Mount,
-
     /// For testing
     Test,
 }
@@ -189,7 +187,6 @@ pub fn run() -> Result<()> {
                 Ok(())
             }
             Debug::Su => crate::ksu::grant_root(),
-            Debug::Mount => event::mount_systemlessly(defs::MODULE_DIR),
             Debug::Test => todo!(),
         },
     };

@@ -24,7 +24,7 @@
 /*
  * Timeout for stopping processes
  */
-unsigned int __read_mostly freeze_timeout_msecs = 20 * MSEC_PER_SEC;
+unsigned int __read_mostly freeze_timeout_msecs = 10 * MSEC_PER_SEC;
 
 static int try_to_freeze_tasks(bool user_only)
 {
@@ -160,6 +160,21 @@ int freeze_processes(void)
 	 */
 	if (!error && !oom_killer_disable(msecs_to_jiffies(freeze_timeout_msecs)))
 		error = -EBUSY;
+
+
+	/*
+	 * There is a hard to fix race between oom_reaper kernel thread
+	 * and oom_killer_disable. oom_reaper calls exit_oom_victim
+	 * before the victim reaches exit_mm so try to freeze all the tasks
+	 * again and catch such a left over task.
+	 */
+	if (!error) {
+		pr_info("Double checking all user space processes after OOM killer disable... ");
+		error = try_to_freeze_tasks(true);
+		pr_cont("\n");
+	}
+
+
 
 	if (error)
 		thaw_processes();

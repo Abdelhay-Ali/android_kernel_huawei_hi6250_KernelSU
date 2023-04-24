@@ -377,7 +377,7 @@ config XILINX_HWICAP
 
 config R3964
 	tristate "Siemens R3964 line discipline"
-	depends on TTY
+	depends on TTY && BROKEN
 	---help---
 	  This driver allows synchronous communication with devices using the
 	  Siemens R3964 packet protocol. Unless you are dealing with special
@@ -591,9 +591,32 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
+config FRANDOM
+	bool "/dev/frandom device support"
+	default y
+	help
+	  Say Y here if you want to support the /dev/frandom device. Frandom
+	  is a Linux kernel random number generator, which is 10-50 times faster 
+	  than what you get from Linux' built-in /dev/urandom.
+	  When in doubt, say "N"
+
 source "drivers/char/xillybus/Kconfig"
 
 source "drivers/char/acm/Kconfig"
+
+config FRANDOM
+	tristate "Frandom RNG driver"
+	help
+	  Frandom is a Linux kernel random number generator, which
+	  is 10-50 times faster than what you get from Linux' built-in
+	  /dev/urandom. And it uses very little (/dev/frandom) or none
+	  (/dev/erandom) of the kernel's entropy pool, so it is very
+	  useful for applications that require a handy source for lots
+	  of random data.
+
+	  http://www.billauer.co.il/frandom.html
+
+	  If unsure here, select N.
 
 endmenu
 

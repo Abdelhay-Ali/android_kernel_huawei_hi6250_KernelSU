@@ -53,8 +53,10 @@ extern struct inet_hashinfo tcp_hashinfo;
 extern struct percpu_counter tcp_orphan_count;
 void tcp_time_wait(struct sock *sk, int state, int timeo);
 
-#define MAX_TCP_HEADER	(128 + MAX_HEADER)
+#define MAX_TCP_HEADER	L1_CACHE_ALIGN(128 + MAX_HEADER)
 #define MAX_TCP_OPTION_SPACE 40
+#define TCP_MIN_SND_MSS		48
+#define TCP_MIN_GSO_SIZE	(TCP_MIN_SND_MSS - MAX_TCP_OPTION_SPACE)
 
 /*
  * Never offer a window over 32767 without using window scaling. Some
@@ -646,19 +648,27 @@ struct sock *cookie_v4_check(struct sock *sk, struct sk_buff *skb);
  */
 static inline void tcp_synq_overflow(const struct sock *sk)
 {
-	unsigned long last_overflow = tcp_sk(sk)->rx_opt.ts_recent_stamp;
+	unsigned long last_overflow = READ_ONCE(tcp_sk(sk)->rx_opt.ts_recent_stamp);
 	unsigned long now = jiffies;
 
-	if (time_after(now, last_overflow + HZ))
-		tcp_sk(sk)->rx_opt.ts_recent_stamp = now;
+	if (!time_between32(now, last_overflow, last_overflow + HZ))
+		WRITE_ONCE(tcp_sk(sk)->rx_opt.ts_recent_stamp, now);
 }
 
 /* syncookies: no recent synqueue overflow on this listening socket? */
 static inline bool tcp_synq_no_recent_overflow(const struct sock *sk)
 {
-	unsigned long last_overflow = tcp_sk(sk)->rx_opt.ts_recent_stamp;
+	unsigned long last_overflow = READ_ONCE(tcp_sk(sk)->rx_opt.ts_recent_stamp);
 
-	return time_after(jiffies, last_overflow + TCP_SYNCOOKIE_VALID);
+	/* If last_overflow <= jiffies <= last_overflow + TCP_SYNCOOKIE_VALID,
+	 * then we're under synflood. However, we have to use
+	 * 'last_overflow - HZ' as lower bound. That's because a concurrent
+	 * tcp_synq_overflow() could update .ts_recent_stamp after we read
+	 * jiffies but before we store .ts_recent_stamp into last_overflow,
+	 * which could lead to rejecting a valid syncookie.
+	 */
+	return !time_between32(jiffies, last_overflow - HZ,
+			       last_overflow + TCP_SYNCOOKIE_VALID);
 }
 
 static inline u32 tcp_cookie_time(void)
@@ -742,6 +752,7 @@ bool tcp_should_expand_sndbuf(const struct sock *sk);
 #endif
 void tcp_skb_mark_lost_uncond_verify(struct tcp_sock *tp, struct sk_buff *skb);
 void tcp_fin(struct sock *sk);
+void tcp_check_space(struct sock *sk);
 
 /* tcp_timer.c */
 void tcp_init_xmit_timers(struct sock *);
@@ -872,11 +883,14 @@ u32 __tcp_select_window(struct sock *sk);
 
 void tcp_send_window_probe(struct sock *sk);
 
-/* TCP timestamps are only 32-bits, this causes a slight
- * complication on 64-bit systems since we store a snapshot
- * of jiffies in the buffer control blocks below.  We decided
- * to use only the low 32-bits of jiffies and hide the ugly
- * casts with the following macro.
+/* TCP uses 32bit jiffies to save some space.
+ * Note that this is different from tcp_time_stamp, which
+ * historically has been the same until linux-4.13.
+ */
+#define tcp_jiffies32 ((u32)jiffies)
+
+/* Generator for TCP TS option (RFC 7323)
+ * Currently tied to 'jiffies' but will soon be driven by 1 ms clock.
  */
 #define tcp_time_stamp		((__u32)(jiffies))
 
@@ -1718,6 +1732,11 @@ bool tcp_fastopen_cookie_check(struct sock *sk, u16 *mss,
 bool tcp_fastopen_defer_connect(struct sock *sk, int *err);
 #define TCP_FASTOPEN_KEY_LENGTH 16
 
+static inline void tcp_init_send_head(struct sock *sk)
+{
+	sk->sk_send_head = NULL;
+}
+
 /* Fastopen key context */
 struct tcp_fastopen_context {
 	struct crypto_cipher	*tfm;
@@ -1734,6 +1753,8 @@ static inline void tcp_write_queue_purge(struct sock *sk)
 		sk_wmem_free_skb(sk, skb);
 	sk_mem_reclaim(sk);
 	tcp_clear_all_retrans_hints(tcp_sk(sk));
+	tcp_init_send_head(sk);
+	inet_csk(sk)->icsk_backoff = 0;
 }
 
 static inline struct sk_buff *tcp_write_queue_head(const struct sock *sk)
@@ -1794,9 +1815,25 @@ static inline void tcp_check_send_head(struct sock *sk, struct sk_buff *skb_unli
 		tcp_sk(sk)->highest_sack = NULL;
 }
 
-static inline void tcp_init_send_head(struct sock *sk)
+static inline struct sk_buff *tcp_rtx_queue_head(const struct sock *sk)
 {
-	sk->sk_send_head = NULL;
+	struct sk_buff *skb = tcp_write_queue_head(sk);
+
+	if (skb == tcp_send_head(sk))
+		skb = NULL;
+
+	return skb;
+}
+
+static inline struct sk_buff *tcp_rtx_queue_tail(const struct sock *sk)
+{
+	struct sk_buff *skb = tcp_send_head(sk);
+
+	/* empty retransmit queue, for example due to zero window */
+	if (skb == tcp_write_queue_head(sk))
+		return NULL;
+
+	return skb ? tcp_write_queue_prev(sk, skb) : tcp_write_queue_tail(sk);
 }
 
 static inline void __tcp_add_write_queue_tail(struct sock *sk, struct sk_buff *skb)

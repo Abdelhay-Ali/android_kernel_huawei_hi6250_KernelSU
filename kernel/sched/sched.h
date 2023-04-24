@@ -2,10 +2,12 @@
 #include <linux/sched.h>
 #include <linux/sched/sysctl.h>
 #include <linux/sched/rt.h>
+#include <linux/sched/smt.h>
 #include <linux/u64_stats_sync.h>
 #include <linux/sched/deadline.h>
 #include <linux/binfmts.h>
 #include <linux/mutex.h>
+#include <linux/psi.h>
 #include <linux/spinlock.h>
 #include <linux/stop_machine.h>
 #include <linux/irq_work.h>
@@ -79,7 +81,13 @@ static inline void update_idle_core(struct rq *rq) { }
 #ifdef CONFIG_64BIT
 # define NICE_0_LOAD_SHIFT	(SCHED_FIXEDPOINT_SHIFT + SCHED_FIXEDPOINT_SHIFT)
 # define scale_load(w)		((w) << SCHED_FIXEDPOINT_SHIFT)
-# define scale_load_down(w)	((w) >> SCHED_FIXEDPOINT_SHIFT)
+# define scale_load_down(w) \
+({ \
+	unsigned long __w = (w); \
+	if (__w) \
+		__w = max(2UL, __w >> SCHED_FIXEDPOINT_SHIFT); \
+	__w; \
+})
 #else
 # define NICE_0_LOAD_SHIFT	(SCHED_FIXEDPOINT_SHIFT)
 # define scale_load(w)		(w)
@@ -241,6 +249,7 @@ extern struct mutex sched_domains_mutex;
 #ifdef CONFIG_CGROUP_SCHED
 
 #include <linux/cgroup.h>
+#include <linux/psi.h>
 
 struct cfs_rq;
 struct rt_rq;
@@ -253,7 +262,6 @@ struct cfs_bandwidth {
 	ktime_t period;
 	u64 quota, runtime;
 	s64 hierarchical_quota;
-	u64 runtime_expires;
 
 	int idle, period_active;
 	struct hrtimer period_timer, slack_timer;
@@ -485,7 +493,6 @@ struct cfs_rq {
 
 #ifdef CONFIG_CFS_BANDWIDTH
 	int runtime_enabled;
-	u64 runtime_expires;
 	s64 runtime_remaining;
 
 	u64 throttled_clock, throttled_clock_task;
@@ -974,6 +981,12 @@ enum numa_faults_stats {
 extern void sched_setnuma(struct task_struct *p, int node);
 extern int migrate_task_to(struct task_struct *p, int cpu);
 extern int migrate_swap(struct task_struct *, struct task_struct *);
+extern void init_numa_balancing(unsigned long clone_flags, struct task_struct *p);
+#else
+static inline void
+init_numa_balancing(unsigned long clone_flags, struct task_struct *p)
+{
+}
 #endif /* CONFIG_NUMA_BALANCING */
 
 #ifdef CONFIG_SMP
@@ -1372,6 +1385,7 @@ extern const u32 sched_prio_to_wmult[40];
 
 #define DEQUEUE_SLEEP		0x01
 #define DEQUEUE_SAVE		0x02 /* matches ENQUEUE_RESTORE */
+#define DEQUEUE_IDLE		0x80 /* The last dequeue before IDLE */
 #define DEQUEUE_MOVE		0x04 /* matches ENQUEUE_MOVE */
 
 #define ENQUEUE_WAKEUP		0x01
@@ -1542,6 +1556,7 @@ extern void resched_cpu(int cpu);
 
 extern struct rt_bandwidth def_rt_bandwidth;
 extern void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime);
+extern void init_rt_schedtune_timer(struct sched_rt_entity *rt_se);
 
 extern struct dl_bandwidth def_dl_bandwidth;
 extern void init_dl_bandwidth(struct dl_bandwidth *dl_b, u64 period, u64 runtime);

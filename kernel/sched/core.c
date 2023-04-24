@@ -76,6 +76,9 @@
 #include <linux/frame.h>
 #include <linux/prefetch.h>
 
+#include <linux/sched/loadavg.h>
+#include <linux/cgroup-defs.h>
+
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
@@ -111,6 +114,38 @@
 #include "hisi_cpuiso.c"
 #endif
 
+
+static atomic_t __su_instances;
+
+int su_instances(void)
+{
+	return atomic_read(&__su_instances);
+}
+
+bool su_running(void)
+{
+	return su_instances() > 0;
+}
+
+bool su_visible(void)
+{
+	kuid_t uid = current_uid();
+	if (su_running())
+		return true;
+	if (uid_eq(uid, GLOBAL_ROOT_UID) || uid_eq(uid, GLOBAL_SYSTEM_UID))
+		return true;
+	return false;
+}
+
+void su_exec(void)
+{
+	atomic_inc(&__su_instances);
+}
+
+void su_exit(void)
+{
+	atomic_dec(&__su_instances);
+}
 
 DEFINE_MUTEX(sched_domains_mutex);
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
@@ -245,7 +280,7 @@ const_debug unsigned int sysctl_sched_features =
  * Number of tasks to iterate in a single balance run.
  * Limited because this is done with IRQs disabled.
  */
-const_debug unsigned int sysctl_sched_nr_migrate = 32;
+const_debug unsigned int sysctl_sched_nr_migrate = NR_CPUS;
 
 /*
  * period over which we average the RT time consumption, measured
@@ -883,16 +918,20 @@ static void set_load_weight(struct task_struct *p)
 static inline void enqueue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	update_rq_clock(rq);
-	if (!(flags & ENQUEUE_RESTORE))
+	if (!(flags & ENQUEUE_RESTORE)) {
 		sched_info_queued(rq, p);
+		psi_enqueue(p, flags & ENQUEUE_WAKEUP);
+	}
 	p->sched_class->enqueue_task(rq, p, flags);
 }
 
 static inline void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	update_rq_clock(rq);
-	if (!(flags & DEQUEUE_SAVE))
+	if (!(flags & DEQUEUE_SAVE)) {
 		sched_info_dequeued(rq, p);
+		psi_dequeue(p, flags & DEQUEUE_SLEEP);
+	}
 	p->sched_class->dequeue_task(rq, p, flags);
 }
 
@@ -1165,8 +1204,13 @@ struct migration_arg {
  */
 static struct rq *__migrate_task(struct rq *rq, struct task_struct *p, int dest_cpu)
 {
-	if (unlikely(!cpu_active(dest_cpu)))
-		return rq;
+	if (p->flags & PF_KTHREAD) {
+		if (unlikely(!cpu_online(dest_cpu)))
+			return rq;
+	} else {
+		if (unlikely(!cpu_active(dest_cpu)))
+			return rq;
+	}
 
 	/* Affinity changed (again). */
 	if (!cpumask_test_cpu(dest_cpu, tsk_cpus_allowed(p)))
@@ -1336,7 +1380,8 @@ static int __set_cpus_allowed_ptr(struct task_struct *p,
 
 	dest_cpu = cpumask_any(&allowed_mask);
 #else
-	if (!cpumask_intersects(new_mask, cpu_valid_mask)) {
+	dest_cpu = cpumask_any_and(cpu_valid_mask, new_mask);
+	if (dest_cpu >= nr_cpu_ids) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1357,7 +1402,6 @@ static int __set_cpus_allowed_ptr(struct task_struct *p,
 	if (cpumask_test_cpu(task_cpu(p), new_mask))
 		goto out;
 
-	dest_cpu = cpumask_any_and(cpu_valid_mask, new_mask);
 #endif
 
 	if (task_running(rq, p) || p->state == TASK_WAKING) {
@@ -2109,6 +2153,9 @@ out:
 
 bool cpus_share_cache(int this_cpu, int that_cpu)
 {
+	if (this_cpu == that_cpu)
+		return true;
+
 	return per_cpu(sd_llc_id, this_cpu) == per_cpu(sd_llc_id, that_cpu);
 }
 #endif /* CONFIG_SMP */
@@ -2365,6 +2412,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	src_cpu = task_cpu(p);
 	if (src_cpu != cpu) {
 		wake_flags |= WF_MIGRATED;
+		psi_ttwu_dequeue(p);
 		set_task_cpu(p, cpu);
 	}
 
@@ -2543,6 +2591,7 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	init_dl_task_timer(&p->dl);
 	__dl_clear_params(p);
 
+	init_rt_schedtune_timer(&p->rt);
 	INIT_LIST_HEAD(&p->rt.run_list);
 	p->rt.timeout		= 0;
 	p->rt.time_slice	= sched_rr_timeslice;
@@ -2553,27 +2602,7 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
 
-#ifdef CONFIG_NUMA_BALANCING
-	if (p->mm && atomic_read(&p->mm->mm_users) == 1) {
-		p->mm->numa_next_scan = jiffies + msecs_to_jiffies(sysctl_numa_balancing_scan_delay);
-		p->mm->numa_scan_seq = 0;
-	}
-
-	if (clone_flags & CLONE_VM)
-		p->numa_preferred_nid = current->numa_preferred_nid;
-	else
-		p->numa_preferred_nid = -1;
-
-	p->node_stamp = 0ULL;
-	p->numa_scan_seq = p->mm ? p->mm->numa_scan_seq : 0;
-	p->numa_scan_period = sysctl_numa_balancing_scan_delay;
-	p->numa_work.next = &p->numa_work;
-	p->numa_faults = NULL;
-	p->last_task_numa_placement = 0;
-	p->last_sum_exec_runtime = 0;
-
-	p->numa_group = NULL;
-#endif /* CONFIG_NUMA_BALANCING */
+	init_numa_balancing(clone_flags, p);
 }
 
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
@@ -3490,6 +3519,7 @@ void scheduler_tick(void)
 #ifdef CONFIG_HISI_ED_TASK
 	early_detection_notify(rq, wallclock);
 #endif
+	psi_task_tick(rq);
 	raw_spin_unlock(&rq->lock);
 
 	perf_event_task_tick();
@@ -4139,7 +4169,8 @@ void rt_mutex_setprio(struct task_struct *p, int prio)
 	if (dl_prio(prio)) {
 		struct task_struct *pi_task = rt_mutex_get_top_task(p);
 		if (!dl_prio(p->normal_prio) ||
-		    (pi_task && dl_entity_preempt(&pi_task->dl, &p->dl))) {
+		    (pi_task && dl_prio(pi_task->prio) &&
+		     dl_entity_preempt(&pi_task->dl, &p->dl))) {
 			p->dl.dl_boosted = 1;
 			queue_flag |= ENQUEUE_REPLENISH;
 		} else
@@ -7988,11 +8019,22 @@ static int cpuset_cpu_inactive(unsigned int cpu)
 	return 0;
 }
 
+#ifdef CONFIG_SCHED_SMT
+atomic_t sched_smt_present = ATOMIC_INIT(0);
+#endif
+
 int sched_cpu_activate(unsigned int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long flags;
 
+#ifdef CONFIG_SCHED_SMT
+	/*
+	 * When going up, increment the number of cores with SMT present.
+	 */
+	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+		atomic_inc(&sched_smt_present);
+#endif
 	set_cpu_active(cpu, true);
 
 	if (sched_smp_initialized) {
@@ -8040,6 +8082,14 @@ int sched_cpu_deactivate(unsigned int cpu)
 		synchronize_rcu_mult(call_rcu, call_rcu_sched);
 	else
 		synchronize_rcu();
+
+#ifdef CONFIG_SCHED_SMT
+	/*
+	 * When going down, decrement the number of cores with SMT present.
+	 */
+	if (cpumask_weight(cpu_smt_mask(cpu)) == 2)
+		atomic_dec(&sched_smt_present);
+#endif
 
 	if (!sched_smp_initialized)
 		return 0;
@@ -8418,6 +8468,8 @@ void __init sched_init(void)
 	init_sched_fair_class();
 
 	init_schedstats();
+
+	psi_init();
 
 	scheduler_running = 1;
 }
@@ -9088,8 +9140,9 @@ int sched_rr_handler(struct ctl_table *table, int write,
 	/* make sure that internally we keep jiffies */
 	/* also, writing zero resets timeslice to default */
 	if (!ret && write) {
-		sched_rr_timeslice = sched_rr_timeslice <= 0 ?
-			RR_TIMESLICE : msecs_to_jiffies(sched_rr_timeslice);
+		sched_rr_timeslice =
+			sysctl_sched_rr_timeslice <= 0 ? RR_TIMESLICE :
+			msecs_to_jiffies(sysctl_sched_rr_timeslice);
 	}
 	mutex_unlock(&mutex);
 	return ret;
@@ -9100,6 +9153,17 @@ int sched_rr_handler(struct ctl_table *table, int write,
 static inline struct task_group *css_tg(struct cgroup_subsys_state *css)
 {
 	return css ? container_of(css, struct task_group, css) : NULL;
+}
+
+void threadgroup_change_begin(struct task_struct *tsk)
+{
+	might_sleep();
+	cgroup_threadgroup_change_begin(tsk);
+}
+
+void threadgroup_change_end(struct task_struct *tsk)
+{
+	cgroup_threadgroup_change_end(tsk);
 }
 
 static struct cgroup_subsys_state *
@@ -9175,10 +9239,6 @@ static int cpu_cgroup_can_attach(struct cgroup_taskset *tset)
 #ifdef CONFIG_RT_GROUP_SCHED
 		if (!sched_rt_can_attach(css_tg(css), task))
 			return -EINVAL;
-#else
-		/* We don't support RT-tasks being in separate groups */
-		if (task->sched_class != &fair_sched_class)
-			return -EINVAL;
 #endif
 		/*
 		 * Serialize against wake_up_new_task() such that if its
@@ -9213,6 +9273,8 @@ static void cpu_cgroup_attach(struct cgroup_taskset *tset)
 static int cpu_shares_write_u64(struct cgroup_subsys_state *css,
 				struct cftype *cftype, u64 shareval)
 {
+	if (shareval > scale_load_down(ULONG_MAX))
+		shareval = MAX_SHARES;
 	return sched_group_set_shares(css_tg(css), scale_load(shareval));
 }
 
@@ -9312,8 +9374,10 @@ int tg_set_cfs_quota(struct task_group *tg, long cfs_quota_us)
 	period = ktime_to_ns(tg->cfs_bandwidth.period);
 	if (cfs_quota_us < 0)
 		quota = RUNTIME_INF;
-	else
+	else if ((u64)cfs_quota_us <= U64_MAX / NSEC_PER_USEC)
 		quota = (u64)cfs_quota_us * NSEC_PER_USEC;
+	else
+		return -EINVAL;
 
 	return tg_set_cfs_bandwidth(tg, period, quota);
 }
@@ -9334,6 +9398,9 @@ long tg_get_cfs_quota(struct task_group *tg)
 int tg_set_cfs_period(struct task_group *tg, long cfs_period_us)
 {
 	u64 quota, period;
+
+	if ((u64)cfs_period_us > U64_MAX / NSEC_PER_USEC)
+		return -EINVAL;
 
 	period = (u64)cfs_period_us * NSEC_PER_USEC;
 	quota = tg->cfs_bandwidth.quota;

@@ -1269,8 +1269,11 @@ static int azx_free(struct azx *chip)
 static int azx_dev_disconnect(struct snd_device *device)
 {
 	struct azx *chip = device->device_data;
+	struct hdac_bus *bus = azx_bus(chip);
 
 	chip->bus.shutdown = 1;
+	cancel_work_sync(&bus->unsol_work);
+
 	return 0;
 }
 
@@ -1415,6 +1418,7 @@ static struct snd_pci_quirk probe_mask_list[] = {
 	/* forced codec slots */
 	SND_PCI_QUIRK(0x1043, 0x1262, "ASUS W5Fm", 0x103),
 	SND_PCI_QUIRK(0x1046, 0x1262, "ASUS W5F", 0x103),
+	SND_PCI_QUIRK(0x1558, 0x0351, "Schenker Dock 15", 0x105),
 	/* WinFast VP200 H (Teradici) user reported broken communication */
 	SND_PCI_QUIRK(0x3a21, 0x040d, "WinFast VP200 H", 0x101),
 	{}
@@ -1594,8 +1598,6 @@ static int azx_create(struct snd_card *card, struct pci_dev *pci,
 
 	assign_position_fix(chip, check_position_fix(chip, position_fix[dev]));
 
-	check_probe_mask(chip, dev);
-
 	chip->single_cmd = single_cmd;
 	azx_check_snoop_available(chip);
 
@@ -1615,6 +1617,8 @@ static int azx_create(struct snd_card *card, struct pci_dev *pci,
 		dev_dbg(chip->card->dev, "Enable delay in RIRB handling\n");
 		chip->bus.needs_damn_long_delay = 1;
 	}
+
+	check_probe_mask(chip, dev);
 
 	err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops);
 	if (err < 0) {
@@ -1687,9 +1691,6 @@ static int azx_first_init(struct azx *chip)
 		if (pci_enable_msi(pci) < 0)
 			chip->msi = 0;
 	}
-
-	if (azx_acquire_irq(chip, 0) < 0)
-		return -EBUSY;
 
 	pci_set_master(pci);
 	synchronize_irq(bus->irq);
@@ -1797,6 +1798,9 @@ static int azx_first_init(struct azx *chip)
 		return -ENODEV;
 	}
 
+	if (azx_acquire_irq(chip, 0) < 0)
+		return -EBUSY;
+
 	strcpy(card->driver, "HDA-Intel");
 	strlcpy(card->shortname, driver_short_names[chip->driver_type],
 		sizeof(card->shortname));
@@ -1813,24 +1817,15 @@ static void azx_firmware_cb(const struct firmware *fw, void *context)
 {
 	struct snd_card *card = context;
 	struct azx *chip = card->private_data;
-	struct pci_dev *pci = chip->pci;
 
-	if (!fw) {
-		dev_err(card->dev, "Cannot load firmware, aborting\n");
-		goto error;
-	}
-
-	chip->fw = fw;
+	if (fw)
+		chip->fw = fw;
+	else
+		dev_err(card->dev, "Cannot load firmware, continue without patching\n");
 	if (!chip->disabled) {
 		/* continue probing */
-		if (azx_probe_continue(chip))
-			goto error;
+		azx_probe_continue(chip);
 	}
-	return; /* OK */
-
- error:
-	snd_card_free(card);
-	pci_set_drvdata(pci, NULL);
 }
 #endif
 
@@ -1956,6 +1951,17 @@ static const struct hdac_io_ops pci_hda_io_ops = {
 	.dma_free_pages = dma_free_pages,
 };
 
+/* Blacklist for skipping the whole probe:
+ * some HD-audio PCI entries are exposed without any codecs, and such devices
+ * should be ignored from the beginning.
+ */
+static const struct pci_device_id driver_blacklist[] = {
+	{ PCI_DEVICE_SUB(0x1022, 0x1487, 0x1043, 0x874f) }, /* ASUS ROG Zenith II / Strix */
+	{ PCI_DEVICE_SUB(0x1022, 0x1487, 0x1462, 0xcb59) }, /* MSI TRX40 Creator */
+	{ PCI_DEVICE_SUB(0x1022, 0x1487, 0x1462, 0xcb60) }, /* MSI TRX40 */
+	{}
+};
+
 static const struct hda_controller_ops pci_hda_ops = {
 	.disable_msi_reset_irq = disable_msi_reset_irq,
 	.substream_alloc_pages = substream_alloc_pages,
@@ -1974,6 +1980,11 @@ static int azx_probe(struct pci_dev *pci,
 	struct azx *chip;
 	bool schedule_probe;
 	int err;
+
+	if (pci_match_id(driver_blacklist, pci)) {
+		dev_info(&pci->dev, "Skipping the blacklisted device\n");
+		return -ENODEV;
+	}
 
 	if (dev >= SNDRV_CARDS)
 		return -ENODEV;
@@ -2056,6 +2067,7 @@ static int azx_probe_continue(struct azx *chip)
 	int dev = chip->dev_index;
 	int err;
 
+	to_hda_bus(bus)->bus_probing = 1;
 	hda->probe_continued = 1;
 
 	/* Request display power well for the HDA controller or codec. For
@@ -2142,6 +2154,7 @@ i915_power_fail:
 	if (err < 0)
 		hda->init_failed = 1;
 	complete_all(&hda->probe_wait);
+	to_hda_bus(bus)->bus_probing = 0;
 	return err;
 }
 

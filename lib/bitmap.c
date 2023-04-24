@@ -13,6 +13,7 @@
 #include <linux/bitops.h>
 #include <linux/bug.h>
 #include <linux/kernel.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 
@@ -62,12 +63,10 @@ EXPORT_SYMBOL(__bitmap_equal);
 
 void __bitmap_complement(unsigned long *dst, const unsigned long *src, unsigned int bits)
 {
-	unsigned int k, lim = bits/BITS_PER_LONG;
+	unsigned int k, lim = BITS_TO_LONGS(bits);
 	for (k = 0; k < lim; ++k)
 		dst[k] = ~src[k];
 
-	if (bits % BITS_PER_LONG)
-		dst[k] = ~src[k];
 }
 EXPORT_SYMBOL(__bitmap_complement);
 
@@ -251,7 +250,7 @@ int __bitmap_weight(const unsigned long *bitmap, unsigned int bits)
 }
 EXPORT_SYMBOL(__bitmap_weight);
 
-void bitmap_set(unsigned long *map, unsigned int start, int len)
+void __bitmap_set(unsigned long *map, unsigned int start, int len)
 {
 	unsigned long *p = map + BIT_WORD(start);
 	const unsigned int size = start + len;
@@ -270,9 +269,9 @@ void bitmap_set(unsigned long *map, unsigned int start, int len)
 		*p |= mask_to_set;
 	}
 }
-EXPORT_SYMBOL(bitmap_set);
+EXPORT_SYMBOL(__bitmap_set);
 
-void bitmap_clear(unsigned long *map, unsigned int start, int len)
+void __bitmap_clear(unsigned long *map, unsigned int start, int len)
 {
 	unsigned long *p = map + BIT_WORD(start);
 	const unsigned int size = start + len;
@@ -291,7 +290,7 @@ void bitmap_clear(unsigned long *map, unsigned int start, int len)
 		*p &= ~mask_to_clear;
 	}
 }
-EXPORT_SYMBOL(bitmap_clear);
+EXPORT_SYMBOL(__bitmap_clear);
 
 /**
  * bitmap_find_next_zero_area_off - find a contiguous aligned zero area
@@ -1212,3 +1211,22 @@ void bitmap_copy_le(unsigned long *dst, const unsigned long *src, unsigned int n
 }
 EXPORT_SYMBOL(bitmap_copy_le);
 #endif
+
+unsigned long *bitmap_alloc(unsigned int nbits, gfp_t flags)
+{
+	return kmalloc_array(BITS_TO_LONGS(nbits), sizeof(unsigned long),
+			     flags);
+}
+EXPORT_SYMBOL(bitmap_alloc);
+
+unsigned long *bitmap_zalloc(unsigned int nbits, gfp_t flags)
+{
+	return bitmap_alloc(nbits, flags | __GFP_ZERO);
+}
+EXPORT_SYMBOL(bitmap_zalloc);
+
+void bitmap_free(const unsigned long *bitmap)
+{
+	kfree(bitmap);
+}
+EXPORT_SYMBOL(bitmap_free);

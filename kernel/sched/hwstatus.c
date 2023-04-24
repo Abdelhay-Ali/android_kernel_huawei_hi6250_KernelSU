@@ -15,6 +15,7 @@
 #include <linux/utsname.h>
 #include <linux/mempolicy.h>
 #include <log/log_usertype.h>
+#include <linux/delayacct.h>
 
 #include <asm/barrier.h>
 #include <asm/stacktrace.h>

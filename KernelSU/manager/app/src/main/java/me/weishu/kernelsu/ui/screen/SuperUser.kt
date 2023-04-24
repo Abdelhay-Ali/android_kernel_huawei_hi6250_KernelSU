@@ -24,10 +24,7 @@ import com.ramcosta.composedestinations.annotation.Destination
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
-import me.weishu.kernelsu.ui.component.ConfirmDialog
-import me.weishu.kernelsu.ui.component.DialogResult
 import me.weishu.kernelsu.ui.component.SearchAppBar
-import me.weishu.kernelsu.ui.util.LocalDialogHost
 import me.weishu.kernelsu.ui.util.LocalSnackbarHost
 import me.weishu.kernelsu.ui.viewmodel.SuperUserViewModel
 import java.util.*
@@ -94,8 +91,6 @@ fun SuperUserScreen() {
         }
     ) { innerPadding ->
 
-        ConfirmDialog()
-
         val refreshState = rememberPullRefreshState(
             refreshing = viewModel.isRefreshing,
             onRefresh = { scope.launch { viewModel.fetchAppList() } },
@@ -108,34 +103,14 @@ fun SuperUserScreen() {
             val failMessage = stringResource(R.string.superuser_failed_to_grant_root)
 
             LazyColumn(Modifier.fillMaxSize()) {
-                items(viewModel.appList, key = { it.packageName + it.uid }) { app ->
+                items(viewModel.appList, key = { it.packageName }) { app ->
                     var isChecked by rememberSaveable(app) { mutableStateOf(app.onAllowList) }
-                    val dialogHost = LocalDialogHost.current
-                    val content =
-                        stringResource(id = R.string.superuser_allow_root_confirm, app.label)
-                    val confirm = stringResource(id = android.R.string.ok)
-                    val cancel = stringResource(id = android.R.string.cancel)
-
                     AppItem(app, isChecked) { checked ->
-                        scope.launch {
-                            if (checked) {
-                                val dialogResult = dialogHost.showDialog(
-                                    app.label,
-                                    content = content,
-                                    confirm = confirm,
-                                    dismiss = cancel
-                                )
-                                if (dialogResult != DialogResult.Confirmed) {
-                                    return@launch
-                                }
-                            }
-
-                            val success = Natives.allowRoot(app.uid, checked)
-                            if (success) {
-                                isChecked = checked
-                            } else {
-                                snackbarHost.showSnackbar(failMessage.format(app.uid))
-                            }
+                        val success = Natives.allowRoot(app.uid, checked)
+                        if (success) {
+                            isChecked = checked
+                        } else scope.launch {
+                            snackbarHost.showSnackbar(failMessage.format(app.uid))
                         }
                     }
                 }

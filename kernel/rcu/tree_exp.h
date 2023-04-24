@@ -358,8 +358,10 @@ static void sync_rcu_exp_select_cpus(struct rcu_state *rsp,
 			struct rcu_data *rdp = per_cpu_ptr(rsp->rda, cpu);
 			struct rcu_dynticks *rdtp = &per_cpu(rcu_dynticks, cpu);
 
+			rdp->exp_dynticks_snap =
+				atomic_add_return(0, &rdtp->dynticks);
 			if (raw_smp_processor_id() == cpu ||
-			    !(atomic_add_return(0, &rdtp->dynticks) & 0x1) ||
+			    !(rdp->exp_dynticks_snap & 0x1) ||
 			    !(rnp->qsmaskinitnext & rdp->grpmask))
 				mask_ofl_test |= rdp->grpmask;
 		}
@@ -377,9 +379,17 @@ static void sync_rcu_exp_select_cpus(struct rcu_state *rsp,
 		/* IPI the remaining CPUs for expedited quiescent state. */
 		for_each_leaf_node_possible_cpu(rnp, cpu) {
 			unsigned long mask = leaf_node_cpu_bit(rnp, cpu);
+			struct rcu_data *rdp = per_cpu_ptr(rsp->rda, cpu);
+			struct rcu_dynticks *rdtp = &per_cpu(rcu_dynticks, cpu);
+
 			if (!(mask_ofl_ipi & mask))
 				continue;
 retry_ipi:
+			if (atomic_add_return(0, &rdtp->dynticks) !=
+			    rdp->exp_dynticks_snap) {
+				mask_ofl_test |= mask;
+				continue;
+			}
 			ret = smp_call_function_single(cpu, func, rsp, 0);
 			if (!ret) {
 				mask_ofl_ipi &= ~mask;
@@ -507,7 +517,6 @@ static void rcu_exp_wait_wake(struct rcu_state *rsp, unsigned long s)
 				rnp->exp_seq_rq = s;
 			spin_unlock(&rnp->exp_lock);
 		}
-		smp_mb(); /* All above changes before wakeup. */
 		wake_up_all(&rnp->exp_wq[(rsp->expedited_sequence >> 1) & 0x3]);
 	}
 	trace_rcu_exp_grace_period(rsp->name, s, TPS("endwake"));
@@ -589,7 +598,6 @@ static void _synchronize_rcu_expedited(struct rcu_state *rsp,
 	wait_event(rnp->exp_wq[(s >> 1) & 0x3],
 		   sync_exp_work_done(rsp,
 				      &rdp->exp_workdone0, s));
-	smp_mb(); /* Workqueue actions happen before return. */
 
 	/* Let the next expedited grace period start. */
 	mutex_unlock(&rsp->exp_mutex);

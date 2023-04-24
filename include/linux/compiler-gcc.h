@@ -21,7 +21,7 @@
  * clobbered. The issue is as follows: while the inline asm might
  * access any memory it wants, the compiler could have fit all of
  * @ptr into memory registers instead, and since @ptr never escaped
- * from that, it proofed that the inline asm wasn't touching any of
+ * from that, it proved that the inline asm wasn't touching any of
  * it. This version works well with both compilers, i.e. we're telling
  * the compiler that the inline asm absolutely may see the contents
  * of @ptr. See also: https://llvm.org/bugs/show_bug.cgi?id=15495
@@ -107,6 +107,10 @@
 #define __weak		__attribute__((weak))
 #define __alias(symbol)	__attribute__((alias(#symbol)))
 
+#ifdef RETPOLINE
+#define __noretpoline __attribute__((indirect_branch("keep")))
+#endif
+
 /*
  * it doesn't make sense on ARM (currently the only user of __naked)
  * to trace naked functions because then mcount is called without
@@ -140,11 +144,18 @@
 #define __attribute_const__	__attribute__((__const__))
 #define __maybe_unused		__attribute__((unused))
 #define __always_unused		__attribute__((unused))
+#define __mode(x)               __attribute__((mode(x)))
 
 /* gcc version specific checks */
 
 #if GCC_VERSION < 30200
 # error Sorry, your compiler is too old - please upgrade it.
+#elif defined(CONFIG_ARM64) && GCC_VERSION < 50100 && !defined(__clang__)
+/*
+ * https://gcc.gnu.org/bugzilla/show_bug.cgi?id=63293
+ * https://lore.kernel.org/r/20210107111841.GN1551@shell.armlinux.org.uk
+ */
+# error Sorry, your version of GCC is too old - please use 5.1 or newer.
 #endif
 
 #if GCC_VERSION < 30300
@@ -221,13 +232,22 @@
 #ifdef CONFIG_STACK_VALIDATION
 #define annotate_unreachable() ({					\
 	asm("1:\t\n"							\
-	    ".pushsection __unreachable, \"a\"\t\n"			\
+	    ".pushsection .discard.unreachable\t\n"			\
 	    ".long 1b\t\n"						\
 	    ".popsection\t\n");						\
 })
 #else
 #define annotate_unreachable()
 #endif
+
+/*
+ * calling noreturn functions, __builtin_unreachable() and __builtin_trap()
+ * confuse the stack allocation in gcc, leading to overly large stack
+ * frames, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82365
+ *
+ * Adding an empty inline assembly before it works around the problem
+ */
+#define barrier_before_unreachable() asm volatile("")
 
 /*
  * Mark a position in code as unreachable.  This can be used to
@@ -239,15 +259,15 @@
  * unreleased.  Really, we need to have autoconf for the kernel.
  */
 #define unreachable() \
-	do { annotate_unreachable(); __builtin_unreachable(); } while (0)
+	do {					\
+		annotate_unreachable();		\
+		barrier_before_unreachable();	\
+		__builtin_unreachable();	\
+	} while (0)
 
 /* Mark a function definition as prohibited from being cloned. */
 #define __noclone	__attribute__((__noclone__, __optimize__("no-tracer")))
 
-#if defined(RANDSTRUCT_PLUGIN) && !defined(__CHECKER__)
-#define __randomize_layout __attribute__((randomize_layout))
-#define __no_randomize_layout __attribute__((no_randomize_layout))
-#endif
 #endif /* GCC_VERSION >= 40500 */
 
 #if GCC_VERSION >= 40600
@@ -258,16 +278,7 @@
  * this.
  */
 #define __visible	__attribute__((externally_visible))
-/*
- * RANDSTRUCT_PLUGIN wants to use an anonymous struct, but it is only
- * possible since GCC 4.6. To provide as much build testing coverage
- * as possible, this is used for all GCC 4.6+ builds, and not just on
- * RANDSTRUCT_PLUGIN builds.
- */
-#define randomized_struct_fields_start	struct {
-#define randomized_struct_fields_end	} __randomize_layout;
-
-#endif /* GCC_VERSION >= 40600 */
+#endif
 
 
 #if GCC_VERSION >= 40900 && !defined(__CHECKER__)
@@ -318,17 +329,7 @@
 #elif GCC_VERSION >= 40902
 #define KASAN_ABI_VERSION 3
 #endif
-/*
- * Walkaround for our gcc version number is below 40902.
- */
-#ifdef CONFIG_KASAN
-/*
- * Tell the compiler that address safety instrumentation (KASAN)
- * should not be applied to that function.
- * Conflicts with inlining: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=67368
- */
-#define __no_sanitize_address __attribute__((no_sanitize_address))
-#else
+
 #if GCC_VERSION >= 40902
 /*
  * Tell the compiler that address safety instrumentation (KASAN)
@@ -337,7 +338,7 @@
  */
 #define __no_sanitize_address __attribute__((no_sanitize_address))
 #endif
-#endif
+
 #endif	/* gcc version >= 40000 specific checks */
 
 #if !defined(__noclone)
@@ -353,3 +354,7 @@
  * code
  */
 #define uninitialized_var(x) x = x
+
+#if GCC_VERSION >= 50100
+#define COMPILER_HAS_GENERIC_BUILTIN_OVERFLOW 1
+#endif

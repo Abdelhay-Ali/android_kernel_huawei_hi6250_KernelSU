@@ -11,6 +11,7 @@
 
 #define pr_fmt(fmt) "CPUidle arm64: " fmt
 
+#include <hisi/tzdriver/libhwsecurec/securec.h>
 #include <linux/cpuidle.h>
 #include <linux/cpumask.h>
 #include <linux/cpu_pm.h>
@@ -95,7 +96,7 @@ u32 hisi_get_idle_cpumask(void)
 			return 0;
 		}
 
-		tmp_flag = (unsigned int)readl(idle_flag_addr[i]) & BIT(idle_flag_bit[i]);
+		tmp_flag = (u32)readl(idle_flag_addr[i]) & BIT(idle_flag_bit[i]);
 		if(tmp_flag)
 			core_idle_flag |= BIT(i);
 	}
@@ -208,7 +209,7 @@ static int hisi_enter_coupled_idle_state(struct cpuidle_device *dev,
 
 		if (cpumask_subset(drv->cpumask, &idle_cpus_mask)) {
 			pending_cpu = cpumask_first(&pending_idle_cpumask);
-			if (pending_cpu < nr_cpu_ids && pending_cpu != cpu) {
+			if (pending_cpu < nr_cpu_ids && pending_cpu != cpu) { //lint !e574
 				cpumask_clear_cpu(pending_cpu, &pending_idle_cpumask);
 				smp_wmb();
 				kick_cpu_sync(pending_cpu);
@@ -283,7 +284,7 @@ static int __init hisi_idle_drv_cpumask_init(struct cpuidle_driver *drv, int clu
 	if (!cpumask)
 		return -ENOMEM;
 
-	for_each_possible_cpu(cpu) {//lint !e713
+	for_each_possible_cpu(cpu) { //lint !e713 !e574
 		if (cpu_topology[cpu].cluster_id == cluster_id)
 			cpumask_set_cpu((unsigned int)cpu, cpumask);
 	}
@@ -319,7 +320,7 @@ static int __init hisi_idle_drv_init(struct cpuidle_driver *drv)
 	 * Call arch CPU operations in order to initialize
 	 * idle states suspend back-end specific data
 	 */
-	for_each_possible_cpu(cpu) {//lint !e713
+	for_each_possible_cpu(cpu) { //lint !e713 !e574
 		ret = arm_cpuidle_init((unsigned int)cpu);
 		if (ret) {
 			pr_err("CPU %d failed to init idle CPU ops\n", cpu);
@@ -360,8 +361,8 @@ static int __init get_idle_mask_init(void)
 {
 	int ret;
 	struct device_node *np = NULL;
-	u32 i, reg_base_addr, flag_data[2] = {0};
-	char filename[64] = {0};
+	u32 i, reg_base_addr, flag_data[2];
+	char filename[64];
 	void __iomem *base_addr;
 
 	np = of_find_compatible_node(NULL, NULL, "hisilicon,cpu-idle-flag");//lint !e838
@@ -373,7 +374,7 @@ static int __init get_idle_mask_init(void)
 	ret = of_property_read_u32(np, "idle-reg-base", &reg_base_addr);
 	if (ret) {
 		pr_err("idle_mask_init : get node idle-reg-base error.\n");
-		return ENODEV;
+		return -ENODEV;
 	}
 
 	base_addr = ioremap(reg_base_addr, SZ_4K);
@@ -383,13 +384,19 @@ static int __init get_idle_mask_init(void)
 	}
 
 	for (i = 0; i < NR_CPUS; ++i) {
-		memset(flag_data, 0, sizeof(flag_data)); /* unsafe_function_ignore: memset */
-		memset(filename, 0, sizeof(filename)); /* unsafe_function_ignore: memset */
+		flag_data[0] = 0;
+		flag_data[1] = 0;
+		ret = memset_s(filename, sizeof(filename), 0, sizeof(filename));
+		if (ret != EOK)
+			return -ENODEV;
 
-		snprintf(filename, sizeof(filename), "core-%u-flag", i); /* unsafe_function_ignore: snprintf */
+		ret = snprintf_s(filename, sizeof(filename), 32, "core-%u-flag", i);
+		if (ret == -1)
+			return -ENODEV;
+
 		ret = of_property_read_u32_array(np, filename, &flag_data[0], 2UL);
 		if (ret)
-			return ENODEV;
+			return -ENODEV;
 
 		idle_flag_addr[i] = base_addr + flag_data[0];
 		if (!idle_flag_addr[i]) {
@@ -435,27 +442,16 @@ static struct notifier_block cpuidle_decoup_hotplug_notifier = {
 	.notifier_call = cpuidle_decoup_hotplug_notify,
 };
 #else
-static int __ref cpuidle_decoup_hotplug_online(unsigned int cpu)
-{
-	clear_bit((int)cpu, &cpu_on_hotplug);
-	return 0;
-}
-
-static int __ref cpuidle_decoup_hotplug_offline(unsigned int cpu)
-{
-	clear_bit((int)cpu, &cpu_on_hotplug);
-	return 0;
-}
-
-static int __ref cpuidle_decoup_hotplug_down_prepare(unsigned int cpu)
-{
-	clear_bit((int)cpu, &cpu_on_hotplug);
-	return 0;
-}
-
-static int __ref cpuidle_decoup_hotplug_up_prepare(unsigned int cpu)
+static int __ref cpuidle_decoup_hotplug_start(unsigned int cpu)
 {
 	set_bit((int)cpu, &cpu_on_hotplug);
+	kick_all_cpus_sync();
+	return 0;
+}
+
+static int __ref cpuidle_decoup_hotplug_end(unsigned int cpu)
+{
+	clear_bit((int)cpu, &cpu_on_hotplug);
 	kick_all_cpus_sync();
 	return 0;
 }
@@ -477,8 +473,8 @@ static void __init hisi_cluster_wfi_state_init(struct cpuidle_state *pstate_wfi)
 	pstate_wfi->exit_latency     = 1;
 	pstate_wfi->target_residency = 1;
 	pstate_wfi->power_usage      = (int)UINT_MAX;
-	strncpy(pstate_wfi->name, "WFI", CPUIDLE_NAME_LEN);
-	strncpy(pstate_wfi->desc, "ARM64 WFI", CPUIDLE_DESC_LEN);
+	strncpy(pstate_wfi->name, "WFI", CPUIDLE_NAME_LEN);  /* unsafe_function_ignore: strncpy  */
+	strncpy(pstate_wfi->desc, "ARM64 WFI", CPUIDLE_DESC_LEN);  /* unsafe_function_ignore: strncpy  */
 }
 
 static int __init hisi_cluster_idle_driver_init(void)
@@ -486,20 +482,20 @@ static int __init hisi_cluster_idle_driver_init(void)
 	int ret;
 	int cpu = 0;
 	int cluster_num = 0;
-	char *drv_name;
+	char *drv_name = NULL;
 	struct cpumask drv_init_cpumask;
-	struct cpuidle_driver *drv;
+	struct cpuidle_driver *drv = NULL;
 
 	cpumask_clear(&drv_init_cpumask);
-	memset(hisi_cluster_idle_driver, 0, sizeof(hisi_cluster_idle_driver));
+	memset(hisi_cluster_idle_driver, 0, sizeof(hisi_cluster_idle_driver)); /* unsafe_function_ignore: memset  */
 
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu(cpu) { //lint !e574
 		if(cpumask_test_cpu(cpu, &drv_init_cpumask))
 			continue;
 
 		drv_name = kzalloc(HISI_CLUSTER_IDLE_DRV_NAME_LEN, GFP_KERNEL);
 		if (drv_name){
-			snprintf(drv_name, HISI_CLUSTER_IDLE_DRV_NAME_LEN, "hisi_cluster%d_idle_driver", cluster_num);
+			snprintf(drv_name, HISI_CLUSTER_IDLE_DRV_NAME_LEN, "hisi_cluster%d_idle_driver", cluster_num); /* unsafe_function_ignore: snprintf  */
 		}
 
 		drv = &hisi_cluster_idle_driver[cluster_num++];
@@ -560,9 +556,9 @@ static int __init hisi_idle_init(void)
 	}
 #else
 	cpuhp_setup_state_nocalls(CPUHP_BP_HISI_MULTIDRV_NOTIFY_PREPARE, "multidrv-cpuidle:notify",
-				  cpuidle_decoup_hotplug_up_prepare, cpuidle_decoup_hotplug_down_prepare);
+				  cpuidle_decoup_hotplug_start, cpuidle_decoup_hotplug_end);
 	cpuhp_setup_state_nocalls(CPUHP_AP_ONLINE_DYN, "multidrv-cpuidle:online/offline",
-				  cpuidle_decoup_hotplug_online, cpuidle_decoup_hotplug_offline);
+				  cpuidle_decoup_hotplug_end, cpuidle_decoup_hotplug_start);
 #endif
 
 	return 0;

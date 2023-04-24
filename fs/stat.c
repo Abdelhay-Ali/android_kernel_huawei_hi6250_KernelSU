@@ -87,7 +87,6 @@ int vfs_fstat(unsigned int fd, struct kstat *stat)
 }
 EXPORT_SYMBOL(vfs_fstat);
 extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
-
 int vfs_fstatat(int dfd, const char __user *filename, struct kstat *stat,
 		int flag)
 {

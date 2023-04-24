@@ -214,6 +214,11 @@ struct rcu_node {
 	struct rt_mutex boost_mtx;
 				/* Used only for the priority-boosting */
 				/*  side effect, not as a lock. */
+	struct completion boost_completion;
+				/* Used to ensure that the rt_mutex used */
+				/*  to carry out the boosting is fully */
+				/*  released with no future boostee accesses */
+				/*  before that rt_mutex is re-initialized. */
 	unsigned long boost_time;
 				/* When to start boosting (jiffies). */
 	struct task_struct *boost_kthread_task;
@@ -404,6 +409,7 @@ struct rcu_data {
 	atomic_long_t exp_workdone1;	/* # done by others #1. */
 	atomic_long_t exp_workdone2;	/* # done by others #2. */
 	atomic_long_t exp_workdone3;	/* # done by others #3. */
+	int exp_dynticks_snap;		/* Double-check need for IPI. */
 
 	/* 7) Callback offloading. */
 #ifdef CONFIG_RCU_NOCB_CPU

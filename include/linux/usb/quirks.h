@@ -62,4 +62,7 @@
 /* Do not reset resume during PM Resume */
 #define USB_QUIRK_PM_NO_RESET_RESUME		BIT(14)
 
+/* device has blacklisted endpoints */
+#define USB_QUIRK_ENDPOINT_BLACKLIST		BIT(15)
+
 #endif /* __LINUX_USB_QUIRKS_H */

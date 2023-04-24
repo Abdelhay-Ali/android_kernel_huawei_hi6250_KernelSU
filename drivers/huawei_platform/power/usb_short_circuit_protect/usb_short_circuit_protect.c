@@ -233,7 +233,7 @@ static int get_temperature_value(void)
                 temp_invalid_flag = 1;
             }
 
-            hwlog_info("tusb adc value [%d]=%d\n", i, temp_array[i]);
+           // hwlog_info("tusb adc value [%d]=%d\n", i, temp_array[i]);
         }
 
         if (temp_invalid_flag == 1) {
@@ -284,23 +284,23 @@ static void set_interval(struct uscp_device_info* di, int temp)
     if (temp > di->interval_switch_temp) {
         di->check_interval = CHECK_INTERVAL_300;//set the check interval 300
         di->keep_check_cnt = 0;
-        hwlog_info("cnt = %d!\n", di->keep_check_cnt);
+        //hwlog_info("cnt = %d!\n", di->keep_check_cnt);
     } else {
         if (di->keep_check_cnt > CHECK_CNT_LIMIT) {
             /*check the temperature per 0.3 second for 100 times ,when the charger just insert.*/
-            hwlog_info("cnt = %d!\n", di->keep_check_cnt);
+            //hwlog_info("cnt = %d!\n", di->keep_check_cnt);
             di->keep_check_cnt -= 1;
             di->check_interval = CHECK_INTERVAL_300;
             is_uscp_mode = 0;
         } else if (di->keep_check_cnt == CHECK_CNT_LIMIT) {
             /* reset the flag when the temperature status is stable*/
-            hwlog_info("cnt = %d!\n", di->keep_check_cnt);
+           // hwlog_info("cnt = %d!\n", di->keep_check_cnt);
             di->keep_check_cnt = -1;
             di->check_interval = CHECK_INTERVAL_10000;//set the check interval 10000
             is_uscp_mode = 0;
             uscp_wake_unlock();
         } else if (di->keep_check_cnt >= 0) {
-            hwlog_info("cnt = %d!\n", di->keep_check_cnt);
+           // hwlog_info("cnt = %d!\n", di->keep_check_cnt);
             di->keep_check_cnt = di->keep_check_cnt + 1;
             di->check_interval = CHECK_INTERVAL_300;
         } else {
@@ -419,7 +419,7 @@ static void check_temperature(struct uscp_device_info* di)
     tusb = get_temperature_value();
     usb_temp = tusb;
     huawei_battery_temp(BAT_TEMP_MIXED, &tbatt);
-    hwlog_info("tusb = %d, tbatt = %d\n", tusb, tbatt);
+    //hwlog_info("tusb = %d, tbatt = %d\n", tusb, tbatt);
     tdiff = tusb - tbatt;
 
     if (di->dmd_hiz_enable) {

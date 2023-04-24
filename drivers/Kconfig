@@ -259,4 +259,6 @@ source "drivers/storage_rofa/Kconfig"
 
 source "drivers/oases/Kconfig"
 
+source "drivers/energy_model/Kconfig"
+
 endmenu

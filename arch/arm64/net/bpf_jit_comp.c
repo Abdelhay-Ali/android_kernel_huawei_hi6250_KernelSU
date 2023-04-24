@@ -30,8 +30,6 @@
 
 #include "bpf_jit.h"
 
-int bpf_jit_enable __read_mostly;
-
 #define TMP_REG_1 (MAX_BPF_JIT_REG + 0)
 #define TMP_REG_2 (MAX_BPF_JIT_REG + 1)
 #define TCALL_CNT (MAX_BPF_JIT_REG + 2)
@@ -389,8 +387,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 			break;
 		case BPF_MOD:
 			emit(A64_UDIV(is64, tmp, dst, src), ctx);
-			emit(A64_MUL(is64, tmp, tmp, src), ctx);
-			emit(A64_SUB(is64, dst, dst, tmp), ctx);
+			emit(A64_MSUB(is64, dst, dst, tmp, src), ctx);
 			break;
 		}
 		break;
@@ -497,8 +494,7 @@ emit_bswap_uxt:
 	case BPF_ALU64 | BPF_MOD | BPF_K:
 		emit_a64_mov_i(is64, tmp2, imm, ctx);
 		emit(A64_UDIV(is64, tmp, dst, tmp2), ctx);
-		emit(A64_MUL(is64, tmp, tmp, tmp2), ctx);
-		emit(A64_SUB(is64, dst, dst, tmp), ctx);
+		emit(A64_MSUB(is64, dst, dst, tmp, tmp2), ctx);
 		break;
 	case BPF_ALU | BPF_LSH | BPF_K:
 	case BPF_ALU64 | BPF_LSH | BPF_K:

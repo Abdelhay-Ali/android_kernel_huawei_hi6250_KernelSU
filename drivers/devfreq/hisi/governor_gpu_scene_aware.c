@@ -20,7 +20,7 @@
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <governor.h>
-
+#include <hisi/tzdriver/libhwsecurec/securec.h>
 #include <linux/hisi/hisi_devfreq.h>
 
 #ifdef CONFIG_HUAWEI_DUBAI
@@ -28,18 +28,15 @@
 #endif
 
 #define DEFAULT_GO_HISPEED_LOAD		90
-#define DEFAULT_HISPEED_FREQ		533000000
+#define DEFAULT_HISPEED_FREQ		480000000
 #define DEFAULT_VSYNC_EQULALIZE		45
 #define DEFAULT_LOADING_WINDOW		10
 #define TARGET_LOAD			85
 #define NTARGET_LOAD			1
-#define NDELAY_TIME			0
 #define MAX_LOADING_WINDOW		50
-#define DFMO_OPENCL_BOOST_ON		(1)
-#define DFMO_OPENCL_BOOST_DN		(0)
-#define DFMO_MIN_OPENCL_BOOST_FREQ	(332000000)
-#define DFMO_MAX_OPENCL_BOOST_FREQ	(667000000)
-#define DFMO_DEFAULT_OPENCL_BOOST_FREQ	(415000000)
+#define DFMO_MIN_OPENCL_BOOST_FREQ	(332000000UL)
+#define DFMO_MAX_OPENCL_BOOST_FREQ	(667000000UL)
+#define DFMO_DEFAULT_OPENCL_BOOST_FREQ	(415000000UL)
 #define SURPORT_POLICY_NUM		20
 #define SURPORT_NTARGET_LOAD_MAX	40
 #define POLICY_BUF_MAX			1024
@@ -67,8 +64,6 @@ struct scene_aware_policy {
 	unsigned int para[MAX_PARA];
 	unsigned int *target_load;
 	unsigned int ntarget_load;
-	unsigned int *delay_time;
-	unsigned int ndelay_time;
 	struct list_head node;
 };
 
@@ -77,11 +72,15 @@ struct devfreq_gpu_scene_aware_data {
 	unsigned long buffer[MAX_LOADING_WINDOW];
 	unsigned long util_sum;
 	unsigned long utilisation;
+	unsigned long normalized_util;
+	unsigned long table_max_freq;
+	unsigned long user_set_freq;
+	unsigned long cl_boost_freq;
 	unsigned int window_counter;
 	unsigned int window_idx;
+	int update_util_flag;
 	int vsync;
 	int cl_boost;
-	unsigned int cl_boost_freq;
 	struct list_head policy_list;
 	struct scene_aware_policy *cur_policy;
 };
@@ -99,6 +98,29 @@ static int devfreq_get_dev_status(struct devfreq *df, struct devfreq_dev_status*
 	return err;
 }
 
+static void devfreq_gpu_scene_aware_apply_limits(struct devfreq *df,
+						 unsigned long *freq)
+{
+	struct devfreq_gpu_scene_aware_data *data = NULL;
+
+	if (NULL == df)
+		return;
+
+	data = df->data;
+	if (NULL == data)
+		return;
+
+	/* Not less than cl_boost_freq, if necessary. */
+	if (data->cl_boost && (*freq < data->cl_boost_freq))
+		*freq = data->cl_boost_freq;
+	if (data->user_set_freq)
+		*freq = data->user_set_freq;
+	if (df->min_freq && *freq < df->min_freq)
+		*freq = df->min_freq;
+	if (df->max_freq && *freq > df->max_freq)
+		*freq = df->max_freq;
+}
+
 static int devfreq_gpu_scene_aware_func(struct devfreq *df,
 					unsigned long *freq)
 {
@@ -110,8 +132,16 @@ static int devfreq_gpu_scene_aware_func(struct devfreq *df,
 	int err = 0;
 	struct hisi_devfreq_data *priv_data = NULL;
 
-	if ((NULL == df) || (NULL == df->data))
+	if (NULL == df)
 		return -EINVAL;
+
+	data = df->data;
+	if (NULL == data)
+		return -EINVAL;
+
+	/* if user take control, only update util when update_util_flag set */
+	if (data->user_set_freq > 0 && data->update_util_flag == 0)
+		goto check_barrier;
 
 	err = devfreq_get_dev_status(df, &stat);
 	if (err)
@@ -122,7 +152,6 @@ static int devfreq_gpu_scene_aware_func(struct devfreq *df,
 	if (NULL == priv_data)
 		return -EINVAL;
 
-	data = df->data;
 	*freq = stat.current_frequency;
 
 	if (unlikely(0 == stat.total_time || 0 == (*freq))) {
@@ -146,6 +175,10 @@ static int devfreq_gpu_scene_aware_func(struct devfreq *df,
 	data->window_idx = data->window_idx % data->cur_policy->para[LOADING_WINDOW];
 	a = div_u64(data->util_sum, data->window_counter);
 	data->utilisation = div64_u64(a, *freq);
+	data->update_util_flag = 0;
+
+	if (data->table_max_freq)
+		data->normalized_util = div64_u64(a, data->table_max_freq);
 
 	if (data->window_counter >= data->cur_policy->para[LOADING_WINDOW]) {
 		for (i = 0; i < (data->cur_policy->ntarget_load - 1)
@@ -164,13 +197,7 @@ static int devfreq_gpu_scene_aware_func(struct devfreq *df,
 		*freq = data->cur_policy->para[HISPEED_FREQ];
 
 check_barrier:
-	/* Not less than cl_boost_freq, if necessary. */
-	if (data && data->cl_boost && (*freq < data->cl_boost_freq))
-		*freq = (unsigned long)data->cl_boost_freq;
-	if (df->min_freq && *freq < df->min_freq)
-		*freq = df->min_freq;
-	if (df->max_freq && *freq > df->max_freq)
-		*freq = df->max_freq;
+	devfreq_gpu_scene_aware_apply_limits(df, freq);
 
 	return 0;
 }
@@ -181,11 +208,11 @@ static ssize_t show_##object					\
 (struct device *dev, struct device_attribute *attr, char *buf)	\
 {								\
 	struct devfreq *devfreq = to_devfreq(dev);		\
-	struct devfreq_gpu_scene_aware_data *data;		\
+	struct devfreq_gpu_scene_aware_data *data = NULL;	\
 	int ret = 0;						\
 	mutex_lock(&devfreq->lock);				\
 	data = devfreq->data;					\
-	ret = snprintf(buf, PAGE_SIZE,				\
+	ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1,	\
 			"%u\n", (unsigned int)data->object);	\
 	mutex_unlock(&devfreq->lock);				\
 	return ret;						\
@@ -193,8 +220,10 @@ static ssize_t show_##object					\
 
 show_one(vsync)
 show_one(utilisation)
+show_one(normalized_util)
 show_one(cl_boost)
 show_one(cl_boost_freq)
+show_one(user_set_freq)
 
 static void refresh_load_buffer(struct devfreq *devfreq,
 		struct scene_aware_policy *new_policy)
@@ -225,7 +254,7 @@ static ssize_t store_scene(struct device *dev, struct device_attribute *attr, co
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct devfreq_gpu_scene_aware_data *data = devfreq->data;
-	struct scene_aware_policy *policy;
+	struct scene_aware_policy *policy = NULL;
 	unsigned int input;
 	char local_buf[POLICY_ID_BUF_MAX] = {0};
 	int ret;
@@ -235,8 +264,8 @@ static ssize_t store_scene(struct device *dev, struct device_attribute *attr, co
 	}
 	strncpy(local_buf, buf, min_t(size_t, sizeof(local_buf) - 1, count));
 
-	ret = sscanf(local_buf, "%u", &input);
-	if (ret != 1)
+	ret = kstrtouint(local_buf, 10, &input);
+	if (ret != 0)
 		return -EINVAL;
 
 	if (data->cur_policy->para[INDEX] == input)
@@ -258,12 +287,12 @@ static ssize_t store_scene(struct device *dev, struct device_attribute *attr, co
 static ssize_t show_scene(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
-	struct devfreq_gpu_scene_aware_data *data;
+	struct devfreq_gpu_scene_aware_data *data = NULL;
 	int ret = 0;
 
 	mutex_lock(&devfreq->lock);
 	data = devfreq->data;
-	ret = snprintf(buf, PAGE_SIZE, "%u\n", data->cur_policy->para[INDEX]);
+	ret = snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%u\n", data->cur_policy->para[INDEX]);
 	mutex_unlock(&devfreq->lock);
 
 	return ret;
@@ -315,23 +344,22 @@ static inline int check_tokens(const unsigned int *ntokens_sub)
 	return (!(ntokens_sub[1] & 0x1) || ntokens_sub[1] > SURPORT_NTARGET_LOAD_MAX || ntokens_sub[0] != MAX_PARA);
 }
 
+#define SCENE_AWARE_MAX_TOKEN		2
 static struct scene_aware_policy *get_policy(const char *buf)
 {
-	const char *cp;
-	const char *cp_sub[3];
-
+	const char *cp = buf;
+	const char *cp_sub[SCENE_AWARE_MAX_TOKEN];
 	int i;
 	int ntokens = 1;
-	unsigned int ntokens_sub[3] = {1, 1, 1};
-	struct scene_aware_policy *policy;
+	unsigned int ntokens_sub[SCENE_AWARE_MAX_TOKEN] = {1, 1};
+	struct scene_aware_policy *policy = NULL;
 	int err = -EINVAL;
 
-	cp = buf;
 	cp_sub[0] = buf;
 	while ((cp = strpbrk(cp, ","))) {
 		cp_sub[ntokens] = ++cp;
 		ntokens++;
-		if (ntokens > 2)
+		if (ntokens >= SCENE_AWARE_MAX_TOKEN)
 			break;
 	}
 
@@ -386,22 +414,8 @@ static struct scene_aware_policy *get_policy(const char *buf)
 		goto err_target_load;
 	}
 
-	/*if (ntokens == 3) {
-		policy->ndelay_time = ntokens_sub[2];
-		policy->delay_time = kzalloc(ntokens_sub[2] * sizeof(unsigned int), GFP_KERNEL);
-		if (IS_ERR_OR_NULL(policy->delay_time)) {
-			err = -ENOMEM;
-			goto err_target_load;
-		}
-
-		if (extract_sub_para(cp_sub[2], policy->delay_time, policy->ndelay_time))
-			goto err_delay_time;
-	}*/
-
 	return policy;
 
-/*err_delay_time:
-	kfree(policy->delay_time);*/
 err_target_load:
 	kfree(policy->target_load);
 err_policy:
@@ -416,9 +430,6 @@ static void release_policy(struct scene_aware_policy *policy)
 
 	kfree(policy->target_load);
 
-	if (!IS_ERR_OR_NULL(policy->delay_time))
-		kfree(policy->delay_time);
-
 	kfree(policy);
 }
 
@@ -427,64 +438,76 @@ static ssize_t show_scene_para(struct device *dev,
 {
 	struct devfreq *devfreq = to_devfreq(dev);
 	struct devfreq_gpu_scene_aware_data *data = devfreq->data;
-	struct scene_aware_policy *policy;
+	struct scene_aware_policy *policy = NULL;
 	ssize_t count = 0;
 	unsigned int i = 0;
 	int ret = 0;
-	char *index_name;
+	char *index_name = NULL;
 
 	mutex_lock(&devfreq->lock);
 
 	list_for_each_entry(policy, &data->policy_list, node) {
 		index_name = (policy == data->cur_policy) ? "->" : "  ";
 		for (i = 0; i < MAX_PARA; i++) {
-			ret = snprintf(buf + count, (PAGE_SIZE - count),
+			ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1),
 				"  %s:  %d\n",
 				(INDEX == i) ? index_name : policy_para_name[i],
 				policy->para[i]);
-			if (ret >= (PAGE_SIZE - count) || ret < 0) {/*lint !e574 */
+			if (ret < 0) {
 				goto err_ret;
 			}
 			count += ret;
+			if ((unsigned int)count >= PAGE_SIZE) {
+				goto err_ret;
+			}
 		}
 
-		ret = snprintf(buf + count, (PAGE_SIZE - count),
+		ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1),
 			"  target load:   ");
-		if (ret >= (PAGE_SIZE - count) || ret < 0) {/*lint !e574 */
+		if (ret < 0) {
 			goto err_ret;
 		}
 		count += ret;
+		if ((unsigned int)count >= PAGE_SIZE) {
+			goto err_ret;
+		}
 
 		if (IS_ERR_OR_NULL(policy->target_load))
 			continue;
 
 		for (i = 0; i < policy->ntarget_load - 1; i++) {
-			ret = snprintf(buf + count, (PAGE_SIZE - count),
+			ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1),
 				"%d:", policy->target_load[i]);
-			if (ret >= (PAGE_SIZE - count) || ret < 0) {/*lint !e574 */
+			if (ret < 0) {
 				goto err_ret;
 			}
 			count += ret;
+			if ((unsigned int)count >= PAGE_SIZE) {
+				goto err_ret;
+			}
 		}
-		ret = snprintf(buf + count, (PAGE_SIZE - count),
+		ret = snprintf_s(buf + count, (PAGE_SIZE - count), (PAGE_SIZE - count - 1),
 				"%d\n", policy->target_load[i]);
-		if (ret >= (PAGE_SIZE - count) || ret < 0) {/*lint !e574 */
+		if (ret < 0) {
 			goto err_ret;
 		}
 		count += ret;
+		if ((unsigned int)count >= PAGE_SIZE) {
+			goto err_ret;
+		}
 	}
 
 err_ret:
 	mutex_unlock(&devfreq->lock);
 	return count;
-
 }
 
 static ssize_t store_scene_para(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
-	struct devfreq_gpu_scene_aware_data *data;
-	struct scene_aware_policy *new_policy, *policy;
+	struct devfreq_gpu_scene_aware_data *data = NULL;
+	struct scene_aware_policy *new_policy = NULL;
+	struct scene_aware_policy *policy = NULL;
 	char local_buf[POLICY_BUF_MAX] = {0};
 
 	if (count >= sizeof(local_buf)) {
@@ -523,38 +546,75 @@ static ssize_t store_scene_para(struct device *dev, struct device_attribute *att
 static ssize_t store_cl_boost(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
-	struct devfreq_gpu_scene_aware_data *data;
-	int input;
-	int ret = 0;
-	ret = sscanf(buf, "%d", &input);
-	if (ret != 1 || input > DFMO_OPENCL_BOOST_ON || input < DFMO_OPENCL_BOOST_DN)
+	struct devfreq_gpu_scene_aware_data *data = NULL;
+	int input = 0;
+	int ret;
+
+	ret = kstrtoint(buf, 10, &input);
+	if (ret != 0 || input < 0)
 		return -EINVAL;
+
 	mutex_lock(&devfreq->lock);
 	data = devfreq->data;
-	data->cl_boost = (unsigned int)input;
+	data->cl_boost = input ? 1 : 0;
 	ret = update_devfreq(devfreq);
 	if (ret == 0)
 		ret = count;
 	mutex_unlock(&devfreq->lock);
+
 	return ret;
 }
 
 static ssize_t store_cl_boost_freq(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct devfreq *devfreq = to_devfreq(dev);
-	struct devfreq_gpu_scene_aware_data *data;
-	int input;
-	int ret = 0;
-	ret = sscanf(buf, "%d", &input);
-	if (ret != 1 || input > DFMO_MAX_OPENCL_BOOST_FREQ || input < DFMO_MIN_OPENCL_BOOST_FREQ)
+	struct devfreq_gpu_scene_aware_data *data = NULL;
+	unsigned long input = 0;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &input);
+	if (ret != 0 ||
+	    input > DFMO_MAX_OPENCL_BOOST_FREQ ||
+	    input < DFMO_MIN_OPENCL_BOOST_FREQ)
 		return -EINVAL;
+
 	mutex_lock(&devfreq->lock);
 	data = devfreq->data;
-	data->cl_boost_freq = (unsigned int)input;
+	data->cl_boost_freq = input;
 	ret = update_devfreq(devfreq);
 	if (ret == 0)
 		ret = count;
 	mutex_unlock(&devfreq->lock);
+
+	return ret;
+}
+
+static ssize_t store_user_set_freq(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	struct devfreq *devfreq = to_devfreq(dev);
+	struct devfreq_gpu_scene_aware_data *data = NULL;
+	unsigned long input;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &input);
+	if (ret != 0)
+		return -EINVAL;
+
+	mutex_lock(&devfreq->lock);
+	data = devfreq->data;
+	if (data->table_max_freq)
+		input = min(data->table_max_freq, input);
+
+	data->user_set_freq = input;
+	data->update_util_flag = 1;
+	ret = update_devfreq(devfreq);
+	if (ret == 0)
+		ret = count;
+
+	mutex_unlock(&devfreq->lock);
+
 	return ret;
 }
 
@@ -565,12 +625,14 @@ GPU_SCENE_AWARE_ATTR_RW(scene);
 GPU_SCENE_AWARE_ATTR_RW(scene_para);
 GPU_SCENE_AWARE_ATTR_RW(cl_boost);
 GPU_SCENE_AWARE_ATTR_RW(cl_boost_freq);
+GPU_SCENE_AWARE_ATTR_RW(user_set_freq);
 
 #define GPU_SCENE_AWARE_ATTR_RO(_name) \
 	static DEVICE_ATTR(_name, 0444, show_##_name, NULL)
 
 GPU_SCENE_AWARE_ATTR_RO(vsync);
 GPU_SCENE_AWARE_ATTR_RO(utilisation);
+GPU_SCENE_AWARE_ATTR_RO(normalized_util);
 
 static struct attribute *dev_entries[] = {
 	&dev_attr_scene.attr,
@@ -578,7 +640,9 @@ static struct attribute *dev_entries[] = {
 	&dev_attr_vsync.attr,
 	&dev_attr_cl_boost.attr,
 	&dev_attr_cl_boost_freq.attr,
+	&dev_attr_user_set_freq.attr,
 	&dev_attr_utilisation.attr,
+	&dev_attr_normalized_util.attr,
 	NULL,
 };
 
@@ -591,11 +655,16 @@ static struct attribute_group dev_attr_group = {
 static int gpu_scene_aware_init(struct devfreq *devfreq)
 {
 	int err = -ENOMEM;
-	struct devfreq_gpu_scene_aware_data *data;
+	struct devfreq_gpu_scene_aware_data *data = NULL;
+	struct devfreq_dev_profile *profile = NULL;
 
-	if (devfreq->data) {
+	if (devfreq->data)
 		goto err_out;
-	}
+
+	if (IS_ERR_OR_NULL(devfreq->profile))
+		goto err_out;
+
+	profile = devfreq->profile;
 
 	data = kzalloc(sizeof(struct devfreq_gpu_scene_aware_data), GFP_KERNEL);
 	if (!data) {
@@ -621,10 +690,13 @@ static int gpu_scene_aware_init(struct devfreq *devfreq)
 	data->cur_policy->para[VSYNC_EQUALIZE] = DEFAULT_VSYNC_EQULALIZE;
 	data->cur_policy->para[LOADING_WINDOW] = DEFAULT_LOADING_WINDOW;
 	data->cur_policy->ntarget_load = NTARGET_LOAD;
-	data->cl_boost = DFMO_OPENCL_BOOST_DN;
 	data->cl_boost_freq = DFMO_DEFAULT_OPENCL_BOOST_FREQ;
+
+	if (profile->max_state > 0 && profile->freq_table)
+		data->table_max_freq =
+			profile->freq_table[profile->max_state-1];
+
 	*(data->cur_policy->target_load) = TARGET_LOAD;
-	data->cur_policy->ndelay_time = NDELAY_TIME;
 	INIT_LIST_HEAD(&data->policy_list);
 	list_add(&data->cur_policy->node, &data->policy_list);
 
@@ -651,8 +723,8 @@ err_out:
 
 static void gpu_scene_aware_exit(struct devfreq *devfreq)
 {
-	struct devfreq_gpu_scene_aware_data *data;
-	struct scene_aware_policy *policy;
+	struct devfreq_gpu_scene_aware_data *data = NULL;
+	struct scene_aware_policy *policy = NULL;
 
 	data = devfreq->data;
 	if (IS_ERR_OR_NULL(data))
@@ -708,6 +780,11 @@ static int devfreq_gpu_scene_aware_handler(struct devfreq *devfreq,
 		devfreq_monitor_resume(devfreq);
 		break;
 
+	case DEVFREQ_GOV_LIMITS:
+		devfreq_gpu_scene_aware_apply_limits(devfreq,
+						     (unsigned long *)data);
+		break;
+
 	default:
 		break;
 	}
@@ -740,3 +817,4 @@ static void __exit devfreq_gpu_scene_aware_exit(void)
 }
 module_exit(devfreq_gpu_scene_aware_exit);
 MODULE_LICENSE("GPL");
+

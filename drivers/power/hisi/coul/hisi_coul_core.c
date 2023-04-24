@@ -1481,8 +1481,8 @@ static int calculate_unusable_charge_uah(struct smartstar_coul_device *di,
 					fcc_uah, iavg_ma,
 					&pc_unusable);
 
-    coul_core_info("RBATT_ADJ:UUC =%d uAh, pc=%d.%d\n",
-        uuc_uah_iavg, pc_unusable/10, pc_unusable%10);
+    /*coul_core_info("RBATT_ADJ:UUC =%d uAh, pc=%d.%d\n",
+        uuc_uah_iavg, pc_unusable/10, pc_unusable%10); */
 
     di->rbatt_ratio = 0;
 
@@ -2138,7 +2138,7 @@ int coul_ntc_temperature_compensation(struct smartstar_coul_device *di, BATTERY_
         }
     }
 
-    coul_core_info("coul_ntc_temperature_compensation: current = %d, temp_without_compensation = %d, temp_with_compensation = %d\n", ichg, temp_without_compensation, temp_with_compensation );
+    //coul_core_info("coul_ntc_temperature_compensation: current = %d, temp_without_compensation = %d, temp_with_compensation = %d\n", ichg, temp_without_compensation, temp_with_compensation );
     return temp_with_compensation;
 }
 /**********************************************************
@@ -2170,7 +2170,7 @@ static int get_temperature_stably(struct smartstar_coul_device *di, BATTERY_TEMP
 			|| LOW_BATT_TEMP_CHECK_THRESHOLD >= temperature){
 			continue;
 		}
-		coul_core_info("stably temp!,old_temp =%d,cnt =%d, temp = %d\n",di->batt_temp,cnt,temperature);
+		//coul_core_info("stably temp!,old_temp =%d,cnt =%d, temp = %d\n",di->batt_temp,cnt,temperature);
 		return temperature;
 	}
 	return temperature;
@@ -2198,7 +2198,7 @@ static void update_battery_temperature(struct smartstar_coul_device *di, int sta
         }
         else if(di->batt_temp != temp)
         {
-            coul_core_info("temperature changed, pre = %d, current = %d\n", di->batt_temp, temp);
+            //coul_core_info("temperature changed, pre = %d, current = %d\n", di->batt_temp, temp);
             di->batt_temp = temp;
         }
     }
@@ -3750,7 +3750,7 @@ static int calculate_delta_rc(struct smartstar_coul_device *di, int soc,
     soc_new = bound_soc(soc_new);
 
 out:
-    coul_core_info("RBATT_ADJ: soc_new=%d rbat_calc=%d rbat_btl=%d ratio=%d "
+    /*coul_core_info("RBATT_ADJ: soc_new=%d rbat_calc=%d rbat_btl=%d ratio=%d "
                        "c=%d u=%d last_ocv=%d ocv_temp=%d "
                        "soc=%d.%d, ocv=%d "
                        "cmin=%d cmax=%d cavg=%d vavg=%d "
@@ -3764,7 +3764,7 @@ out:
                        delta_ocv, delta_pc/10, (int)abs(delta_pc%10), delta_rc_uah,
                        delta_ocv_100, delta_pc_100/10, (int)abs(delta_pc_100%10), delta_rc_uah_100,
                        delta_rc_final
-                       );
+                       ); */
 
     di->batt_soc_est = soc_new;
     return delta_rc_final;

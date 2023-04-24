@@ -21,7 +21,7 @@ obj-$(CONFIG_MALI_T830) += r28p0-01rel0/
 #obj-$(CONFIG_MALI_MIMIR) += bifrost-r6p0-cet/
 #obj-$(CONFIG_MALI_MIMIR) += bifrost-r7p0-00cet0/
 #obj-$(CONFIG_MALI_MIMIR) += bifrost-r8p0-00cet0/
-obj-$(CONFIG_MALI_MIMIR) += bifrost-r14p0-00cet0/
+obj-$(CONFIG_MALI_MIMIR) += bifrost-r16p0-00cet5/
 
 #obj-$(CONFIG_MALI_HEIMDALL) += bifrost-r2p0-03rel0/
 #obj-$(CONFIG_MALI_HEIMDALL) += bifrost-r4p0-01rel0/
@@ -29,12 +29,12 @@ obj-$(CONFIG_MALI_MIMIR) += bifrost-r14p0-00cet0/
 #obj-$(CONFIG_MALI_HEIMDALL) += bifrost-r7p0-00cet0/
 #obj-$(CONFIG_MALI_HEIMDALL) += bifrost-r8p0-00cet0/
 #obj-$(CONFIG_MALI_HEIMDALL) += bifrost-r10p0-00cet3/
-obj-$(CONFIG_MALI_HEIMDALL) += bifrost-r14p0-00cet0/
+obj-$(CONFIG_MALI_HEIMDALL) += bifrost-r16p0-00cet5/
 
 #obj-$(CONFIG_MALI_SIGURD) += bifrost-r7p0-00cet0/
 #obj-$(CONFIG_MALI_SIGURD) += bifrost-r8p0-01rel0/
 #obj-$(CONFIG_MALI_SIGURD) += bifrost-r10p0-00cet3/
-obj-$(CONFIG_MALI_SIGURD) += bifrost-r14p0-00cet0/
+obj-$(CONFIG_MALI_SIGURD) += bifrost-r16p0-00cet5/
 
 #obj-$(CONFIG_MALI_NORR) += bifrost-r6p0-cet/
 #obj-$(CONFIG_MALI_NORR) += bifrost-r7p0-00cet0/
@@ -45,7 +45,7 @@ obj-$(CONFIG_MALI_SIGURD) += bifrost-r14p0-00cet0/
 obj-$(CONFIG_MALI_NORR) += bifrost-r16p0-00cet5/
 
 #obj-$(CONFIG_MALI_TRYM) += bifrost-r11p0-01rel0/
-obj-$(CONFIG_MALI_TRYM) += bifrost-r14p0-00cet0/
+obj-$(CONFIG_MALI_TRYM) += bifrost-r16p0-00cet5/
 
 #obj-$(CONFIG_MALI_GONDUL) += bifrost-r11p0-01rel0/
-obj-$(CONFIG_MALI_GONDUL) += bifrost-r14p0-00cet0/
+obj-$(CONFIG_MALI_GONDUL) += bifrost-r16p0-00cet5/

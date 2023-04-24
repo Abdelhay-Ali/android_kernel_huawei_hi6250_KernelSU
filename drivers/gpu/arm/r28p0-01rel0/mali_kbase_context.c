@@ -39,7 +39,7 @@ extern void fencewp_report(long timeout, bool dump);
 
 enum hrtimer_restart kbase_wait_fence_timeout_callback(struct hrtimer *timer)
 {
-	pr_err("[MALI_MIDGARD] kbase_wait_fence_timeout, wait fence time out\n");
+	pr_debug("[MALI_MIDGARD] kbase_wait_fence_timeout, wait fence time out\n");
 
 #ifdef CONFIG_HW_ZEROHUNG
 	fencewp_report(FENCE_TIMEOUT_TIME, false);

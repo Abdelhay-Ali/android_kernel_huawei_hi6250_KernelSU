@@ -1535,7 +1535,7 @@ void kbase_cancel_soft_job(struct kbase_jd_atom *katom)
 		break;
 	default:
 		/* This soft-job doesn't support cancellation! */
-		pr_err("kbase_cancel_soft_job soft-job cancel request katom is %pK, job req is %x", katom, katom->core_req);
+		pr_debug("kbase_cancel_soft_job soft-job cancel request katom is %pK, job req is %x", katom, katom->core_req);
 		KBASE_DEBUG_ASSERT(0);
 	}
 }

@@ -767,7 +767,8 @@ static void __setattr_copy(struct inode *inode, const struct iattr *attr)
 	if (ia_valid & ATTR_MODE) {
 		umode_t mode = attr->ia_mode;
 
-		if (!in_group_p(inode->i_gid) && !capable(CAP_FSETID))
+		if (!in_group_p(inode->i_gid) &&
+			!capable_wrt_inode_uidgid(inode, CAP_FSETID))
 			mode &= ~S_ISGID;
 		set_acl_inode(inode, mode);
 	}
@@ -1125,7 +1126,7 @@ static int __clone_blkaddrs(struct inode *src_inode, struct inode *dst_inode,
 				}
 				dn.ofs_in_node++;
 				i++;
-				new_size = (dst + i) << PAGE_SHIFT;
+				new_size = (loff_t)(dst + i) << PAGE_SHIFT;
 				if (dst_inode->i_size < new_size)
 					f2fs_i_size_write(dst_inode, new_size);
 			} while (--ilen && (do_replace[i] || blkaddr[i] == NULL_ADDR));
@@ -2684,10 +2685,6 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return f2fs_ioc_flush_device(filp, arg);
 	case F2FS_IOC_GET_FEATURES:
 		return f2fs_ioc_get_features(filp, arg);
-	case F2FS_IOC_GET_PIN_FILE:
-		return f2fs_ioc_get_pin_file(filp, arg);
-	case F2FS_IOC_SET_PIN_FILE:
-		return f2fs_ioc_set_pin_file(filp, arg);
 #if DEFINE_F2FS_FS_SDP_ENCRYPTION
 	case F2FS_IOC_SET_SDP_ENCRYPTION_POLICY:
 		return f2fs_ioc_set_sdp_encryption_policy(filp, arg);
@@ -2772,8 +2769,6 @@ long f2fs_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case F2FS_IOC_MOVE_RANGE:
 	case F2FS_IOC_FLUSH_DEVICE:
 	case F2FS_IOC_GET_FEATURES:
-	case F2FS_IOC_GET_PIN_FILE:
-	case F2FS_IOC_SET_PIN_FILE:
 		break;
 	default:
 		return -ENOIOCTLCMD;

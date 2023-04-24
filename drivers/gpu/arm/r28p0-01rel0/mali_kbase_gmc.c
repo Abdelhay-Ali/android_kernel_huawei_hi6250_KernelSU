@@ -399,7 +399,7 @@ static int kbase_gmc_page_decompress(struct tagged_addr *p, struct kbase_device 
 #endif
 	page = alloc_page(flags);
 	if (!page) {
-		pr_err("Unable to allocate a page for decompression.\n");
+		pr_debug("Unable to allocate a page for decompression.\n");
 		return -ENOMEM;
 	}
 	err = gmc_storage_get_page(kbdev->kbase_gmc_device.storage, page, handle);
@@ -504,7 +504,7 @@ static int kbase_gmc_compress_alloc(struct kbase_mem_phy_alloc *alloc, u64 start
 			tagged_page->tagged_addr = as_phys_addr_t(*tagged_page);
 			ret = kbase_gmc_page_compress(tagged_page, alloc->imported.native.kctx->kbdev);
 			if (ret) {
-				pr_err("can't compress page, physaddr %llu\n", (unsigned long long) as_phys_addr_t(*tagged_page));
+				pr_debug("can't compress page, physaddr %llu\n", (unsigned long long) as_phys_addr_t(*tagged_page));
 				return ret;
 			}
 		}
@@ -604,7 +604,7 @@ static int kbase_gmc_decompress_alloc(struct kbase_mem_phy_alloc *alloc, s64 sta
 		if (as_phys_addr_t(*tagged_page) && kbase_is_entry_compressed(*tagged_page)) {
 			ret = kbase_gmc_page_decompress(tagged_page, alloc->imported.native.kctx->kbdev);
 			if (ret) {
-				pr_err("can't decompress page, physaddr %llu\n", (unsigned long long) as_phys_addr_t(*tagged_page));
+				pr_debug("can't decompress page, physaddr %llu\n", (unsigned long long) as_phys_addr_t(*tagged_page));
 				return ret;
 			}
 		}
@@ -665,7 +665,7 @@ static int kbase_gmc_walk_region(struct kbase_va_region *reg, gmc_op op)
 		ret = kbase_gmc_compress_region(reg, reg->start_pfn, cpu_alloc->nents);
 		break;
 	default:
-		pr_err("Invalid GMC operation\n");
+		pr_debug("Invalid GMC operation\n");
 		ret = -EINVAL;
 	}
 
@@ -688,7 +688,7 @@ void kbase_gmc_walk_region_work(struct work_struct *work)
 	pr_debug("worker [%pK] have started, op %d\n", work, reg->op);
 	ret = kbase_gmc_walk_region(reg, reg->op);
 	if (ret) {
-		pr_err("worker [%pK] has errors during operation %d\n", work, reg->op);
+		pr_debug("worker [%pK] has errors during operation %d\n", work, reg->op);
 		atomic_inc(&n_gmc_workers_failed);
 	}
 	atomic_dec(&n_gmc_workers);
@@ -777,7 +777,7 @@ static int kbase_gmc_walk_kctx(struct kbase_context *kctx, struct kbase_gmc_arg 
 	kbase_gmc_unlock_task(&gmc_tsk, arg.op);
 	n_workers_failed = atomic_read(&n_gmc_workers_failed);
 	if (n_workers_failed > 0) {
-		pr_err("%d workers has failed to complete\n", n_workers_failed);
+		pr_debug("%d workers has failed to complete\n", n_workers_failed);
 		ret = -EINVAL;
 	}
 	return ret;

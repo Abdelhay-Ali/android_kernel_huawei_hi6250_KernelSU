@@ -287,9 +287,16 @@ static ssize_t gadget_dev_desc_bcdUSB_store(struct config_item *item,
 
 static ssize_t gadget_dev_desc_UDC_show(struct config_item *item, char *page)
 {
-	char *udc_name = to_gadget_info(item)->composite.gadget_driver.udc_name;
+	struct gadget_info *gi = to_gadget_info(item);
+	char *udc_name;
+	int ret;
 
-	return sprintf(page, "%s\n", udc_name ?: "");
+	mutex_lock(&gi->lock);
+	udc_name = gi->composite.gadget_driver.udc_name;
+	ret = sprintf(page, "%s\n", udc_name ?: "");
+	mutex_unlock(&gi->lock);
+
+	return ret;
 }
 
 static int unregister_gadget(struct gadget_info *gi)
@@ -317,6 +324,9 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 	struct gadget_info *gi = to_gadget_info(item);
 	char *name;
 	int ret;
+
+	if (strlen(page) < len)
+		return -EOVERFLOW;
 
 	name = kstrdup(page, GFP_KERNEL);
 	if (!name)
@@ -1285,11 +1295,6 @@ static void purge_configs_funcs(struct gadget_info *gi)
 
 		cfg = container_of(c, struct config_usb_cfg, c);
 
-		/*
-		 * Access c->functions inversely, otherwise the order of
-		 * functions on cfg->func_list will be changed when failed
-		 * to call usb_add_function in configfs_composite_bind.
-		 */
 		list_for_each_entry_safe_reverse(f, tmp, &c->functions, list) {
 
 			list_move(&f->list, &cfg->func_list);
@@ -1565,6 +1570,8 @@ static void configfs_composite_unbind(struct usb_gadget *gadget)
 	composite_dev_cleanup(cdev);
 	usb_ep_autoconfig_reset(cdev->gadget);
 	cdev->gadget = NULL;
+	cdev->deactivations = 0;
+	gadget->deactivated = false;
 	set_gadget_data(gadget, NULL);
 #ifdef CONFIG_HISI_USB_CONFIGFS
 	cdev->req = NULL;
@@ -1718,7 +1725,7 @@ static const struct usb_gadget_driver configfs_driver_template = {
 	.suspend	= composite_suspend,
 	.resume		= composite_resume,
 
-	.max_speed	= USB_SPEED_SUPER,
+	.max_speed	= USB_SPEED_SUPER_PLUS,
 	.driver = {
 		.owner          = THIS_MODULE,
 		.name		= "configfs-gadget",
@@ -1901,7 +1908,7 @@ static struct config_group *gadgets_make(
 	gi->composite.unbind = configfs_do_nothing;
 	gi->composite.suspend = NULL;
 	gi->composite.resume = NULL;
-	gi->composite.max_speed = USB_SPEED_SUPER;
+	gi->composite.max_speed = USB_SPEED_SUPER_PLUS;
 
 	mutex_init(&gi->lock);
 	INIT_LIST_HEAD(&gi->string_list);

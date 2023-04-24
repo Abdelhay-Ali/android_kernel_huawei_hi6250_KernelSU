@@ -36,6 +36,8 @@
 /* Do not use these with a slab allocator */
 #define GFP_SLAB_BUG_MASK (__GFP_DMA32|__GFP_HIGHMEM|~__GFP_BITS_MASK)
 
+void page_writeback_init(void);
+
 int do_swap_page(struct fault_env *fe, pte_t orig_pte);
 
 #ifdef CONFIG_SPECULATIVE_PAGE_FAULT
@@ -215,6 +217,7 @@ extern void prep_compound_page(struct page *page, unsigned int order);
 extern void post_alloc_hook(struct page *page, unsigned int order,
 					gfp_t gfp_flags);
 extern int user_min_free_kbytes;
+extern atomic_long_t kswapd_waiters;
 
 #if defined CONFIG_COMPACTION || defined CONFIG_CMA
 
@@ -497,6 +500,16 @@ static inline void mminit_validate_memmodel_limits(unsigned long *start_pfn,
 #define NODE_RECLAIM_FULL	-1
 #define NODE_RECLAIM_SOME	0
 #define NODE_RECLAIM_SUCCESS	1
+
+#ifdef CONFIG_NUMA
+extern int node_reclaim(struct pglist_data *, gfp_t, unsigned int);
+#else
+static inline int node_reclaim(struct pglist_data *pgdat, gfp_t mask,
+				unsigned int order)
+{
+	return NODE_RECLAIM_NOSCAN;
+}
+#endif
 
 extern int hwpoison_filter(struct page *p);
 

@@ -1,0 +1,19 @@
+make[1]: Entering directory '/home/abdelhy/Desktop/P20_lite_Kernels/android_kernel_huawei_hi6250-4.9.319/out'
+ccache: error: execv of /home/abdelhay/2/tc1/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf/bin/aarch64-elf-gcc failed: No such file or directory
+ccache: error: execv of /home/abdelhay/2/tc1/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf/bin/aarch64-elf-gcc failed: No such file or directory
+  GEN     /home/abdelhy/Desktop/P20_lite_Kernels/android_kernel_huawei_hi6250-4.9.319/out/Makefile
+scripts/kconfig/conf  --silentoldconfig Kconfig
+drivers/char/Kconfig:607:warning: ignoring type redefinition of 'FRANDOM' from 'boolean' to 'tristate'
+drivers/huawei_platform/net/himos/Kconfig:1:warning: ignoring unsupported character ''
+drivers/huawei_platform/net/himos/Kconfig:2:warning: ignoring unsupported character ''
+arch/arm64/Makefile:27: ld does not support --fix-cortex-a53-843419; kernel may be susceptible to erratum
+ccache: error: execv of /home/abdelhay/2/tc1/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf/bin/aarch64-elf-gcc failed: No such file or directory
+ccache: error: execv of /home/abdelhay/2/tc1/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf/bin/aarch64-elf-gcc failed: No such file or directory
+  CHK     include/config/kernel.release
+ccache: error: execv of /home/abdelhay/2/tc1/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf/bin/aarch64-elf-gcc failed: No such file or directory
+Cannot use CONFIG_CC_STACKPROTECTOR_STRONG: -fstack-protector-strong not supported by compiler
+make[1]: *** [/home/abdelhy/Desktop/P20_lite_Kernels/android_kernel_huawei_hi6250-4.9.319/Makefile:1365: prepare-compiler-check] Error 1
+make[1]: *** Waiting for unfinished jobs....
+  UPD     include/config/kernel.release
+make[1]: Leaving directory '/home/abdelhy/Desktop/P20_lite_Kernels/android_kernel_huawei_hi6250-4.9.319/out'
+make: *** [Makefile:155: sub-make] Error 2

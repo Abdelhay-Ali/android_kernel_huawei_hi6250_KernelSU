@@ -59,12 +59,14 @@ struct rds_sock *rds_find_bound(__be32 addr, __be16 port)
 {
 	u64 key = ((u64)addr << 32) | port;
 	struct rds_sock *rs;
-
-	rs = rhashtable_lookup_fast(&bind_hash_table, &key, ht_parms);
-	if (rs && !sock_flag(rds_rs_to_sk(rs), SOCK_DEAD))
-		rds_sock_addref(rs);
-	else
+    
+	rcu_read_lock();
+	rs = rhashtable_lookup(&bind_hash_table, &key, ht_parms);
+	if (rs && (sock_flag(rds_rs_to_sk(rs), SOCK_DEAD) ||
+		   !atomic_inc_not_zero(&rds_rs_to_sk(rs)->sk_refcnt)))
 		rs = NULL;
+
+	rcu_read_unlock();
 
 	rdsdebug("returning rs %p for %pI4:%u\n", rs, &addr,
 		ntohs(port));

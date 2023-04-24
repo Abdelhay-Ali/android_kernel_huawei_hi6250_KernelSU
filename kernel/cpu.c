@@ -382,6 +382,7 @@ void __init cpu_smt_disable(bool force)
 		pr_info("SMT: Force disabled\n");
 		cpu_smt_control = CPU_SMT_FORCE_DISABLED;
 	} else {
+		pr_info("SMT: disabled\n");
 		cpu_smt_control = CPU_SMT_DISABLED;
 	}
 }
@@ -517,8 +518,7 @@ static int bringup_wait_for_ap(unsigned int cpu)
 	if (WARN_ON_ONCE((!cpu_online(cpu))))
 		return -ECANCELED;
 
-	/* Unpark the stopper thread and the hotplug thread of the target cpu */
-	stop_machine_unpark(cpu);
+	/* Unpark the hotplug thread of the target cpu */
 	kthread_unpark(st->thread);
 
 	/*
@@ -601,6 +601,20 @@ static void undo_cpu_up(unsigned int cpu, struct cpuhp_cpu_state *st)
 	}
 }
 
+static inline bool can_rollback_cpu(struct cpuhp_cpu_state *st)
+{
+	if (IS_ENABLED(CONFIG_HOTPLUG_CPU))
+		return true;
+	/*
+	 * When CPU hotplug is disabled, then taking the CPU down is not
+	 * possible because takedown_cpu() and the architecture and
+	 * subsystem specific mechanisms are not available. So the CPU
+	 * which would be completely unplugged again needs to stay around
+	 * in the current state.
+	 */
+	return st->state <= CPUHP_BRINGUP_CPU;
+}
+
 static int cpuhp_up_callbacks(unsigned int cpu, struct cpuhp_cpu_state *st,
 			      enum cpuhp_state target)
 {
@@ -611,8 +625,10 @@ static int cpuhp_up_callbacks(unsigned int cpu, struct cpuhp_cpu_state *st,
 		st->state++;
 		ret = cpuhp_invoke_callback(cpu, st->state, true, NULL);
 		if (ret) {
-			st->target = prev_state;
-			undo_cpu_up(cpu, st);
+			if (can_rollback_cpu(st)) {
+				st->target = prev_state;
+				undo_cpu_up(cpu, st);
+			}
 			break;
 		}
 	}
@@ -802,6 +818,10 @@ void __unregister_cpu_notifier(struct notifier_block *nb)
 EXPORT_SYMBOL(__unregister_cpu_notifier);
 
 #ifdef CONFIG_HOTPLUG_CPU
+#ifndef arch_clear_mm_cpumask_cpu
+#define arch_clear_mm_cpumask_cpu(cpu, mm) cpumask_clear_cpu(cpu, mm_cpumask(mm))
+#endif
+
 /**
  * clear_tasks_mm_cpumask - Safely clear tasks' mm_cpumask for a CPU
  * @cpu: a CPU id
@@ -837,7 +857,7 @@ void clear_tasks_mm_cpumask(int cpu)
 		t = find_lock_task_mm(p);
 		if (!t)
 			continue;
-		cpumask_clear_cpu(cpu, mm_cpumask(t->mm));
+		arch_clear_mm_cpumask_cpu(cpu, t->mm);
 		task_unlock(t);
 	}
 	rcu_read_unlock();
@@ -1108,8 +1128,8 @@ void notify_cpu_starting(unsigned int cpu)
 
 /*
  * Called from the idle task. Wake up the controlling task which brings the
- * stopper and the hotplug thread of the upcoming CPU up and then delegates
- * the rest of the online bringup to the hotplug thread.
+ * hotplug thread of the upcoming CPU up and then delegates the rest of the
+ * online bringup to the hotplug thread.
  */
 void cpuhp_online_idle(enum cpuhp_state state)
 {
@@ -1118,6 +1138,12 @@ void cpuhp_online_idle(enum cpuhp_state state)
 	/* Happens for the boot cpu */
 	if (state != CPUHP_AP_ONLINE_IDLE)
 		return;
+
+	/*
+	 * Unpart the stopper thread before we start the idle loop (and start
+	 * scheduling); this ensures the stopper task is always available.
+	 */
+	stop_machine_unpark(smp_processor_id());
 
 	st->state = CPUHP_AP_ONLINE_IDLE;
 	complete(&st->done);
@@ -2032,10 +2058,8 @@ static int cpuhp_smt_disable(enum cpuhp_smt_control ctrlval)
 		 */
 		cpuhp_offline_cpu_device(cpu);
 	}
-	if (!ret) {
+	if (!ret)
 		cpu_smt_control = ctrlval;
-		arch_smt_update();
-	}
 	cpu_maps_update_done();
 	return ret;
 }
@@ -2046,7 +2070,6 @@ static int cpuhp_smt_enable(void)
 
 	cpu_maps_update_begin();
 	cpu_smt_control = CPU_SMT_ENABLED;
-	arch_smt_update();
 	for_each_present_cpu(cpu) {
 		/* Skip online CPUs and CPUs on offline nodes */
 		if (cpu_online(cpu) || !node_online(cpu_to_node(cpu)))
@@ -2211,6 +2234,21 @@ struct cpumask __cpu_isolated_mask __read_mostly;
 EXPORT_SYMBOL(__cpu_isolated_mask);
 #endif
 
+/*
+ * This assumes that half of the CPUs are little and that they have lower
+ * CPU numbers than the big CPUs (e.g., on an 8-core system, CPUs 0-3 would be
+ * little and CPUs 4-7 would be big).
+ */
+#define LITTLE_CPU_MASK ((1UL << (NR_CPUS / 2)) - 1)
+#define BIG_CPU_MASK    (((1UL << NR_CPUS) - 1) & ~LITTLE_CPU_MASK)
+static const unsigned long little_cluster_cpus = LITTLE_CPU_MASK;
+const struct cpumask *const cpu_lp_mask = to_cpumask(&little_cluster_cpus);
+EXPORT_SYMBOL(cpu_lp_mask);
+
+static const unsigned long big_cluster_cpus = BIG_CPU_MASK;
+const struct cpumask *const cpu_perf_mask = to_cpumask(&big_cluster_cpus);
+EXPORT_SYMBOL(cpu_perf_mask);
+
 void init_cpu_present(const struct cpumask *src)
 {
 	cpumask_copy(&__cpu_present_mask, src);
@@ -2280,3 +2318,46 @@ void idle_notifier_call_chain(unsigned long val)
 	atomic_notifier_call_chain(&idle_notifier, val, NULL);
 }
 EXPORT_SYMBOL_GPL(idle_notifier_call_chain);
+
+/*
+ * These are used for a global "mitigations=" cmdline option for toggling
+ * optional CPU mitigations.
+ */
+enum cpu_mitigations {
+	CPU_MITIGATIONS_OFF,
+	CPU_MITIGATIONS_AUTO,
+	CPU_MITIGATIONS_AUTO_NOSMT,
+};
+
+static enum cpu_mitigations cpu_mitigations __ro_after_init =
+	CPU_MITIGATIONS_AUTO;
+
+static int __init mitigations_parse_cmdline(char *arg)
+{
+	if (!strcmp(arg, "off"))
+		cpu_mitigations = CPU_MITIGATIONS_OFF;
+	else if (!strcmp(arg, "auto"))
+		cpu_mitigations = CPU_MITIGATIONS_AUTO;
+	else if (!strcmp(arg, "auto,nosmt"))
+		cpu_mitigations = CPU_MITIGATIONS_AUTO_NOSMT;
+	else
+		pr_crit("Unsupported mitigations=%s, system may still be vulnerable\n",
+			arg);
+
+	return 0;
+}
+early_param("mitigations", mitigations_parse_cmdline);
+
+/* mitigations=off */
+bool cpu_mitigations_off(void)
+{
+	return cpu_mitigations == CPU_MITIGATIONS_OFF;
+}
+EXPORT_SYMBOL_GPL(cpu_mitigations_off);
+
+/* mitigations=auto,nosmt */
+bool cpu_mitigations_auto_nosmt(void)
+{
+	return cpu_mitigations == CPU_MITIGATIONS_AUTO_NOSMT;
+}
+EXPORT_SYMBOL_GPL(cpu_mitigations_auto_nosmt);

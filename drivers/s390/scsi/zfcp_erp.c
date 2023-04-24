@@ -10,6 +10,7 @@
 #define pr_fmt(fmt) KMSG_COMPONENT ": " fmt
 
 #include <linux/kthread.h>
+#include <linux/bug.h>
 #include "zfcp_ext.h"
 #include "zfcp_reqlist.h"
 
@@ -125,6 +126,46 @@ static void zfcp_erp_action_dismiss_adapter(struct zfcp_adapter *adapter)
 	}
 }
 
+static int zfcp_erp_handle_failed(int want, struct zfcp_adapter *adapter,
+				  struct zfcp_port *port,
+				  struct scsi_device *sdev)
+{
+	int need = want;
+	struct zfcp_scsi_dev *zsdev;
+
+	switch (want) {
+	case ZFCP_ERP_ACTION_REOPEN_LUN:
+		zsdev = sdev_to_zfcp(sdev);
+		if (atomic_read(&zsdev->status) & ZFCP_STATUS_COMMON_ERP_FAILED)
+			need = 0;
+		break;
+	case ZFCP_ERP_ACTION_REOPEN_PORT_FORCED:
+		if (atomic_read(&port->status) & ZFCP_STATUS_COMMON_ERP_FAILED)
+			need = 0;
+		break;
+	case ZFCP_ERP_ACTION_REOPEN_PORT:
+		if (atomic_read(&port->status) &
+		    ZFCP_STATUS_COMMON_ERP_FAILED) {
+			need = 0;
+			/* ensure propagation of failed status to new devices */
+			zfcp_erp_set_port_status(
+				port, ZFCP_STATUS_COMMON_ERP_FAILED);
+		}
+		break;
+	case ZFCP_ERP_ACTION_REOPEN_ADAPTER:
+		if (atomic_read(&adapter->status) &
+		    ZFCP_STATUS_COMMON_ERP_FAILED) {
+			need = 0;
+			/* ensure propagation of failed status to new devices */
+			zfcp_erp_set_adapter_status(
+				adapter, ZFCP_STATUS_COMMON_ERP_FAILED);
+		}
+		break;
+	}
+
+	return need;
+}
+
 static int zfcp_erp_required_act(int want, struct zfcp_adapter *adapter,
 				 struct zfcp_port *port,
 				 struct scsi_device *sdev)
@@ -183,6 +224,12 @@ static struct zfcp_erp_action *zfcp_erp_setup_act(int need, u32 act_status,
 {
 	struct zfcp_erp_action *erp_action;
 	struct zfcp_scsi_dev *zfcp_sdev;
+
+	if (WARN_ON_ONCE(need != ZFCP_ERP_ACTION_REOPEN_LUN &&
+			 need != ZFCP_ERP_ACTION_REOPEN_PORT &&
+			 need != ZFCP_ERP_ACTION_REOPEN_PORT_FORCED &&
+			 need != ZFCP_ERP_ACTION_REOPEN_ADAPTER))
+		return NULL;
 
 	switch (need) {
 	case ZFCP_ERP_ACTION_REOPEN_LUN:
@@ -583,6 +630,20 @@ static void zfcp_erp_strategy_memwait(struct zfcp_erp_action *erp_action)
 	add_timer(&erp_action->timer);
 }
 
+void zfcp_erp_port_forced_reopen_all(struct zfcp_adapter *adapter,
+				     int clear, char *dbftag)
+{
+	unsigned long flags;
+	struct zfcp_port *port;
+
+	write_lock_irqsave(&adapter->erp_lock, flags);
+	read_lock(&adapter->port_list_lock);
+	list_for_each_entry(port, &adapter->port_list, list)
+		_zfcp_erp_port_forced_reopen(port, clear, dbftag);
+	read_unlock(&adapter->port_list_lock);
+	write_unlock_irqrestore(&adapter->erp_lock, flags);
+}
+
 static void _zfcp_erp_port_reopen_all(struct zfcp_adapter *adapter,
 				      int clear, char *id)
 {
@@ -660,7 +721,7 @@ static void zfcp_erp_enqueue_ptp_port(struct zfcp_adapter *adapter)
 				 adapter->peer_d_id);
 	if (IS_ERR(port)) /* error or port already attached */
 		return;
-	_zfcp_erp_port_reopen(port, 0, "ereptp1");
+	zfcp_erp_port_reopen(port, 0, "ereptp1");
 }
 
 static int zfcp_erp_adapter_strat_fsf_xconf(struct zfcp_erp_action *erp_action)
@@ -1237,6 +1298,9 @@ static void zfcp_erp_try_rport_unblock(struct zfcp_port *port)
 		struct zfcp_scsi_dev *zsdev = sdev_to_zfcp(sdev);
 		int lun_status;
 
+		if (sdev->sdev_state == SDEV_DEL ||
+		    sdev->sdev_state == SDEV_CANCEL)
+			continue;
 		if (zsdev->port != port)
 			continue;
 		/* LUN under port of interest */

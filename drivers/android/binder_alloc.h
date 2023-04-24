@@ -56,6 +56,7 @@ struct binder_buffer {
 	unsigned async_transaction:1;
 	unsigned debug_id:29;
 
+
 	struct binder_transaction *transaction;
 
 	struct binder_node *target_node;

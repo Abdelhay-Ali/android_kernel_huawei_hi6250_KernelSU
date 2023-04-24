@@ -133,6 +133,9 @@ struct cpufreq_policy {
 	unsigned int		up_transition_delay_us;
 	unsigned int		down_transition_delay_us;
 
+	/* Boost switch for tasks with p->in_iowait set */
+	bool iowait_boost_enable;
+
 	 /* Cached frequency lookup from cpufreq_driver_resolve_freq. */
 	unsigned int cached_target_freq;
 	int cached_resolved_idx;
@@ -248,20 +251,12 @@ __ATTR(_name, _perm, show_##_name, NULL)
 static struct freq_attr _name =			\
 __ATTR(_name, 0644, show_##_name, store_##_name)
 
-struct global_attr {
-	struct attribute attr;
-	ssize_t (*show)(struct kobject *kobj,
-			struct attribute *attr, char *buf);
-	ssize_t (*store)(struct kobject *a, struct attribute *b,
-			 const char *c, size_t count);
-};
-
 #define define_one_global_ro(_name)		\
-static struct global_attr _name =		\
+static struct kobj_attribute _name =		\
 __ATTR(_name, 0444, show_##_name, NULL)
 
 #define define_one_global_rw(_name)		\
-static struct global_attr _name =		\
+static struct kobj_attribute _name =		\
 __ATTR(_name, 0644, show_##_name, store_##_name)
 
 
@@ -525,9 +520,9 @@ static inline unsigned long cpufreq_scale(unsigned long old, u_int div,
  * For CPUs with transition latency > 10ms (mostly drivers with CPUFREQ_ETERNAL)
  * the ondemand governor will not work. All times here are in us (microseconds).
  */
-#define MIN_SAMPLING_RATE_RATIO		(2)
+
 #define LATENCY_MULTIPLIER		(1000)
-#define MIN_LATENCY_MULTIPLIER		(20)
+
 #define TRANSITION_LATENCY_LIMIT	(10 * 1000 * 1000)
 
 struct cpufreq_governor {

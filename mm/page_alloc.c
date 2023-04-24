@@ -67,6 +67,8 @@
 #include <linux/memcontrol.h>
 #include <linux/hisi/hisi_ion.h>
 #include <linux/hisi/page_tracker.h>
+#include <linux/khugepaged.h>
+#include <linux/psi.h>
 
 #include <linux/hisi/rdr_hisi_ap_hook.h>
 #include <asm/sections.h>
@@ -74,6 +76,7 @@
 #include <asm/div64.h>
 #include <linux/delay.h>
 #include "internal.h"
+#include <linux/cpu_input_boost.h>
 
 #ifdef CONFIG_HISI_SLOW_PATH_COUNT
 #include "hisi/slowpath_count.h"
@@ -93,6 +96,8 @@
 #include "slab.h"
 #include "slab_unreclaimable_test.h"
 #endif
+
+atomic_long_t kswapd_waiters = ATOMIC_LONG_INIT(0);
 
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
@@ -854,7 +859,7 @@ static inline void __free_one_page(struct page *page,
 	struct page *buddy;
 	unsigned int max_order;
 
-	max_order = min_t(unsigned int, MAX_ORDER, pageblock_order + 1);
+	max_order = min_t(unsigned int, MAX_ORDER - 1, pageblock_order);
 
 	VM_BUG_ON(!zone_is_initialized(zone));
 	VM_BUG_ON_PAGE(page->flags & PAGE_FLAGS_CHECK_AT_PREP, page);
@@ -869,7 +874,7 @@ static inline void __free_one_page(struct page *page,
 	VM_BUG_ON_PAGE(bad_range(zone, page), page);
 
 continue_merging:
-	while (order < max_order - 1) {
+	while (order < max_order) {
 		buddy_idx = __find_buddy_index(page_idx, order);
 		buddy = page + (buddy_idx - page_idx);
 		if (!page_is_buddy(page, buddy, order))
@@ -890,7 +895,7 @@ continue_merging:
 		page_idx = combined_idx;
 		order++;
 	}
-	if (max_order < MAX_ORDER) {
+	if (order < MAX_ORDER - 1) {
 		/* If we are here, it means order is >= pageblock_order.
 		 * We want to prevent merge between freepages on isolate
 		 * pageblock and normal pageblock. Without this, pageblock
@@ -911,7 +916,7 @@ continue_merging:
 						is_migrate_isolate(buddy_mt)))
 				goto done_merging;
 		}
-		max_order++;
+		max_order = order + 1;
 		goto continue_merging;
 	}
 
@@ -1158,6 +1163,11 @@ static void free_pcppages_bulk(struct zone *zone, int count,
 	if (nr_scanned)
 		__mod_node_page_state(zone->zone_pgdat, NR_PAGES_SCANNED, -nr_scanned);/*lint !e501*/
 
+	/*
+	 * Ensure proper count is passed which otherwise would stuck in the
+	 * below while (list_empty(list)) loop.
+	 */
+	count = min(pcp->count, count);
 	while (count) {
 		struct page *page;
 		struct list_head *list;
@@ -1460,6 +1470,7 @@ void set_zone_contiguous(struct zone *zone)
 		if (!__pageblock_pfn_to_page(block_start_pfn,
 					     block_end_pfn, zone))
 			return;
+		cond_resched();
 	}
 
 	/* We confirm that there is no hole */
@@ -3308,15 +3319,20 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 		enum compact_priority prio, enum compact_result *compact_result)
 {
 	struct page *page;
+	unsigned long pflags;
 	unsigned int noreclaim_flag = current->flags & PF_MEMALLOC;
 
 	if (!order)
 		return NULL;
 
+	psi_memstall_enter(&pflags);
 	current->flags |= PF_MEMALLOC;
+
 	*compact_result = try_to_compact_pages(gfp_mask, order, alloc_flags, ac,
 									prio);
+
 	current->flags = (current->flags & ~PF_MEMALLOC) | noreclaim_flag;
+	psi_memstall_leave(&pflags);
 
 	if (*compact_result <= COMPACT_INACTIVE)
 		return NULL;
@@ -3453,11 +3469,13 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 {
 	struct reclaim_state reclaim_state;
 	int progress;
+	unsigned long pflags;
 
 	cond_resched();
 
 	/* We now go into synchronous reclaim */
 	cpuset_memory_pressure_bump();
+	psi_memstall_enter(&pflags);
 	current->flags |= PF_MEMALLOC;
 	lockdep_set_current_reclaim_state(gfp_mask);
 	reclaim_state.reclaimed_slab = 0;
@@ -3469,6 +3487,7 @@ __perform_reclaim(gfp_t gfp_mask, unsigned int order,
 	current->reclaim_state = NULL;
 	lockdep_clear_current_reclaim_state();
 	current->flags &= ~PF_MEMALLOC;
+	psi_memstall_leave(&pflags);
 
 	cond_resched();
 
@@ -3687,6 +3706,8 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	unsigned long alloc_start = jiffies;
 	unsigned int stall_timeout = 10 * HZ;
 	unsigned int cpuset_mems_cookie;
+	bool woke_kswapd = false;
+	bool used_vmpressure = false;
 
 	/*
 	 * In the slowpath, we sanity check order to avoid ever trying to
@@ -3735,8 +3756,15 @@ retry_cpuset:
 	 */
 	alloc_flags = gfp_to_alloc_flags(gfp_mask);
 
-	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
+	if (gfp_mask & __GFP_KSWAPD_RECLAIM) {
+		if (!woke_kswapd) {
+			atomic_long_inc(&kswapd_waiters);
+			woke_kswapd = true;
+		}
+		if (!used_vmpressure)
+			used_vmpressure = vmpressure_inc_users(order);
 		wake_all_kswapds(order, ac);
+	}
 
 	/*
 	 * The adjusted alloc_flags might result in immediate success, so try
@@ -3835,14 +3863,18 @@ retry:
 	}
 
 	/* Avoid allocations with no watermarks from looping endlessly */
-	if (test_thread_flag(TIF_MEMDIE) && !(gfp_mask & __GFP_NOFAIL))
+	if (test_thread_flag(TIF_MEMDIE) && !(gfp_mask & __GFP_NOFAIL)) {
+		gfp_mask |= __GFP_NOWARN;
 		goto nopage;
+	}
 
 
 	/* Try direct reclaim and then allocating */
 #ifdef CONFIG_HISI_SLOW_PATH_COUNT
 	pgalloc_count_inc(1, order);
 #endif
+	if (!used_vmpressure)
+		used_vmpressure = vmpressure_inc_users(order);
 	page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac,
 							&did_some_progress);
 	if (page)
@@ -3867,6 +3899,9 @@ retry:
 	 */
 	if (order > PAGE_ALLOC_COSTLY_ORDER && !(gfp_mask & __GFP_REPEAT))
 		goto nopage;
+
+	/* Boost when memory is low so allocation latency doesn't get too bad */
+	cpu_input_boost_kick_max(100);
 
 	/* Make sure we know about allocations which stall for too long */
 	if (time_after(jiffies, alloc_start + stall_timeout)) {
@@ -3921,12 +3956,17 @@ nopage:
 	if (read_mems_allowed_retry(cpuset_mems_cookie))
 		goto retry_cpuset;
 
-	warn_alloc(gfp_mask,
-			"page allocation failure: order:%u", order);
 got_pg:
 #ifdef CONFIG_HW_MEMORY_MONITOR
 	delayacct_allocpages_end(order);
 #endif
+	if (woke_kswapd)
+		atomic_long_dec(&kswapd_waiters);
+	if (used_vmpressure)
+		vmpressure_dec_users();
+	if (!page)
+		warn_alloc(gfp_mask,
+				"page allocation failure: order:%u", order);
 	return page;
 }
 
@@ -4148,11 +4188,11 @@ refill:
 		/* Even if we own the page, we do not use atomic_set().
 		 * This would break get_page_unless_zero() users.
 		 */
-		page_ref_add(page, size - 1);
+		page_ref_add(page, PAGE_FRAG_CACHE_MAX_SIZE);
 
 		/* reset page count bias and offset to start of new frag */
 		nc->pfmemalloc = page_is_pfmemalloc(page);
-		nc->pagecnt_bias = size;
+		nc->pagecnt_bias = PAGE_FRAG_CACHE_MAX_SIZE + 1;
 		nc->offset = size;
 	}
 
@@ -4168,10 +4208,10 @@ refill:
 		size = nc->size;
 #endif
 		/* OK, page count is 0, we can safely set it */
-		set_page_count(page, size);
+		set_page_count(page, PAGE_FRAG_CACHE_MAX_SIZE + 1);
 
 		/* reset page count bias and offset to start of new frag */
-		nc->pagecnt_bias = size;
+		nc->pagecnt_bias = PAGE_FRAG_CACHE_MAX_SIZE + 1;
 		offset = size - fragsz;
 	}
 
@@ -4365,6 +4405,14 @@ long si_mem_available(void)
 	 */
 	available += global_page_state(NR_SLAB_RECLAIMABLE) -
 		     min(global_page_state(NR_SLAB_RECLAIMABLE) / 2, wmark_low);/*lint !e666*/
+
+	/*
+	 * Part of the kernel memory, which can be released under memory
+	 * pressure.
+	 */
+	available += global_node_page_state(NR_INDIRECTLY_RECLAIMABLE_BYTES) >>
+		PAGE_SHIFT;
+
 	/*
 	 * Add the ioncache pool pages
 	 */
@@ -4874,7 +4922,7 @@ static int build_zonelists_node(pg_data_t *pgdat, struct zonelist *zonelist,
 	do {
 		zone_type--;
 		zone = pgdat->node_zones + zone_type;
-		if (managed_zone(zone)) {
+		if (populated_zone(zone)) {
 			zoneref_set_zone(zone,
 				&zonelist->_zonerefs[nr_zones++]);
 			check_highest_zone(zone_type);
@@ -4985,7 +5033,7 @@ int numa_zonelist_order_handler(struct ctl_table *table, int write,
 			user_zonelist_order = oldval;
 		} else if (oldval != user_zonelist_order) {
 			mutex_lock(&zonelists_mutex);
-			build_all_zonelists(NULL, NULL);
+			build_all_zonelists(NULL, NULL, false);
 			mutex_unlock(&zonelists_mutex);
 		}
 	}
@@ -5365,11 +5413,12 @@ build_all_zonelists_init(void)
  * (2) call of __init annotated helper build_all_zonelists_init
  * [protected by SYSTEM_BOOTING].
  */
-void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone)
+void __ref build_all_zonelists(pg_data_t *pgdat, struct zone *zone,
+			       bool hotplug_context)
 {
 	set_zonelist_order();
 
-	if (system_state == SYSTEM_BOOTING) {
+	if (system_state == SYSTEM_BOOTING && !hotplug_context) {
 		build_all_zonelists_init();
 	} else {
 #ifdef CONFIG_MEMORY_HOTPLUG
@@ -5869,13 +5918,15 @@ static unsigned long __meminit zone_spanned_pages_in_node(int nid,
 					unsigned long *zone_end_pfn,
 					unsigned long *ignored)
 {
+	unsigned long zone_low = arch_zone_lowest_possible_pfn[zone_type];
+	unsigned long zone_high = arch_zone_highest_possible_pfn[zone_type];
 	/* When hotadd a new node from cpu_up(), the node should be empty */
 	if (!node_start_pfn && !node_end_pfn)
 		return 0;
 
 	/* Get the start and end of the zone */
-	*zone_start_pfn = arch_zone_lowest_possible_pfn[zone_type];
-	*zone_end_pfn = arch_zone_highest_possible_pfn[zone_type];
+	*zone_start_pfn = clamp(node_start_pfn, zone_low, zone_high);
+	*zone_end_pfn = clamp(node_end_pfn, zone_low, zone_high);
 	adjust_zone_range_for_zone_movable(nid, zone_type,
 				node_start_pfn, node_end_pfn,
 				zone_start_pfn, zone_end_pfn);
@@ -6635,9 +6686,16 @@ restart:
 
 out2:
 	/* Align start of ZONE_MOVABLE on all nids to MAX_ORDER_NR_PAGES */
-	for (nid = 0; nid < MAX_NUMNODES; nid++)
+	for (nid = 0; nid < MAX_NUMNODES; nid++) {
+		unsigned long start_pfn, end_pfn;
+
 		zone_movable_pfn[nid] =
 			roundup(zone_movable_pfn[nid], MAX_ORDER_NR_PAGES);
+
+		get_pfn_range_for_nid(nid, &start_pfn, &end_pfn);
+		if (zone_movable_pfn[nid] >= end_pfn)
+			zone_movable_pfn[nid] = 0;
+	}
 
 out:
 	/* restore the node_state */
@@ -6865,7 +6923,7 @@ void __init mem_init_print_info(const char *str)
 	 */
 #define adj_init_size(start, end, size, pos, adj) \
 	do { \
-		if (start <= pos && pos < end && size > adj) \
+		if (&start[0] <= &pos[0] && &pos[0] < &end[0] && size > adj) \
 			size -= adj; \
 	} while (0)
 
@@ -7225,9 +7283,11 @@ int __meminit init_per_zone_wmark_min(void)
 	setup_min_slab_ratio();
 #endif
 
+	khugepaged_min_free_kbytes_update();
+
 	return 0;
 }
-core_initcall(init_per_zone_wmark_min)
+postcore_initcall(init_per_zone_wmark_min)
 
 /*
  * min_free_kbytes_sysctl_handler - just a wrapper around proc_dointvec() so

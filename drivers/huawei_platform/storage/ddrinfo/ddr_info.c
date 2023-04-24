@@ -43,7 +43,7 @@ static unsigned int ddr_get_boardid(void)
 
 	full_boardid = boardid[0] * 1000 + boardid[1] * 100 +
 		boardid[2] * 10 + boardid[3];
-	pr_info("Board ID.%x\n", full_boardid);
+	//pr_info("Board ID.%x\n", full_boardid);
 
 	return full_boardid;
 }
@@ -69,7 +69,7 @@ static unsigned int get_ddr_info(void)
 		pr_err("%s  ioremap ERROR !!\n", __func__);
 		return 0;
 	}
-	pr_info("ddr_info va = 0x%lx\n", (unsigned long)virtual_addr);
+	//pr_info("ddr_info va = 0x%lx\n", (unsigned long)virtual_addr);
 
 	tmp_reg_value = *(unsigned long *)((unsigned long)virtual_addr +
 		(DDR_INFO_ADDR&0x00000FFF));

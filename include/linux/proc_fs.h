@@ -41,6 +41,7 @@ extern void *proc_get_parent_data(const struct inode *);
 extern void proc_remove(struct proc_dir_entry *);
 extern void remove_proc_entry(const char *, struct proc_dir_entry *);
 extern int remove_proc_subtree(const char *, struct proc_dir_entry *);
+extern struct pid *tgid_pidfd_to_pid(const struct file *file);
 
 #ifdef CONFIG_SCHED_HWSTATUS
 extern void sched_hwstatus_updatefg(pid_t pid,pid_t tgid);
@@ -79,6 +80,11 @@ static inline void *proc_get_parent_data(const struct inode *inode) { BUG(); ret
 static inline void proc_remove(struct proc_dir_entry *de) {}
 #define remove_proc_entry(name, parent) do {} while (0)
 static inline int remove_proc_subtree(const char *name, struct proc_dir_entry *parent) { return 0; }
+
+static inline struct pid *tgid_pidfd_to_pid(const struct file *file)
+{
+	return ERR_PTR(-EBADF);
+}
 
 #endif /* CONFIG_PROC_FS */
 

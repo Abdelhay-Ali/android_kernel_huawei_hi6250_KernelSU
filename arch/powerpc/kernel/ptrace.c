@@ -547,6 +547,7 @@ static int vr_get(struct task_struct *target, const struct user_regset *regset,
 		/*
 		 * Copy out only the low-order word of vrsave.
 		 */
+		int start, end;
 		union {
 			elf_vrreg_t reg;
 			u32 word;
@@ -555,8 +556,10 @@ static int vr_get(struct task_struct *target, const struct user_regset *regset,
 
 		vrsave.word = target->thread.vrsave;
 
+		start = 33 * sizeof(vector128);
+		end = start + sizeof(vrsave);
 		ret = user_regset_copyout(&pos, &count, &kbuf, &ubuf, &vrsave,
-					  33 * sizeof(vector128), -1);
+					  start, end);
 	}
 
 	return ret;
@@ -594,6 +597,7 @@ static int vr_set(struct task_struct *target, const struct user_regset *regset,
 		/*
 		 * We use only the first word of vrsave.
 		 */
+		int start, end;
 		union {
 			elf_vrreg_t reg;
 			u32 word;
@@ -602,8 +606,10 @@ static int vr_set(struct task_struct *target, const struct user_regset *regset,
 
 		vrsave.word = target->thread.vrsave;
 
+		start = 33 * sizeof(vector128);
+		end = start + sizeof(vrsave);
 		ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf, &vrsave,
-					 33 * sizeof(vector128), -1);
+					 start, end);
 		if (!ret)
 			target->thread.vrsave = vrsave.word;
 	}
@@ -2931,8 +2937,13 @@ long arch_ptrace(struct task_struct *child, long request,
 
 			flush_fp_to_thread(child);
 			if (fpidx < (PT_FPSCR - PT_FPR0))
-				memcpy(&tmp, &child->thread.TS_FPR(fpidx),
-				       sizeof(long));
+				if (IS_ENABLED(CONFIG_PPC32)) {
+					// On 32-bit the index we are passed refers to 32-bit words
+					tmp = ((u32 *)child->thread.fp_state.fpr)[fpidx];
+				} else {
+					memcpy(&tmp, &child->thread.TS_FPR(fpidx),
+					       sizeof(long));
+				}
 			else
 				tmp = child->thread.fp_state.fpscr;
 		}
@@ -2964,8 +2975,13 @@ long arch_ptrace(struct task_struct *child, long request,
 
 			flush_fp_to_thread(child);
 			if (fpidx < (PT_FPSCR - PT_FPR0))
-				memcpy(&child->thread.TS_FPR(fpidx), &data,
-				       sizeof(long));
+				if (IS_ENABLED(CONFIG_PPC32)) {
+					// On 32-bit the index we are passed refers to 32-bit words
+					((u32 *)child->thread.fp_state.fpr)[fpidx] = data;
+				} else {
+					memcpy(&child->thread.TS_FPR(fpidx), &data,
+					       sizeof(long));
+				}
 			else
 				child->thread.fp_state.fpscr = data;
 			ret = 0;

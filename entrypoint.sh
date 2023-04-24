@@ -60,7 +60,7 @@ msg "Installing toolchain..."
         #wget -c https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/aarch64-elf/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-elf.tar.xz --no-check-certificate
 
         
-        tar -xvf gcc-linaro-4.9.4-2017.01-x86_64_aarch64-elf.tar.xz
+        tar -xvf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf.xz
         git config --global --add safe.directory /github/workspace
 
         ln -sf /usr/bin/gcc-"$ver_number" /usr/bin/gcc

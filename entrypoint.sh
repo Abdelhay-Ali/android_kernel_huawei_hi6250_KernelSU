@@ -79,7 +79,7 @@ msg "Installing toolchain..."
 
 cd "$workdir"/"$kernel_path" || exit 127
 
-curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 #curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.5.2
 #fix compile issue
 cp sepolicy.c $(pwd)/KernelSU/kernel/selinux/

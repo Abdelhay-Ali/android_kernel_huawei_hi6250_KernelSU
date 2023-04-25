@@ -91,7 +91,7 @@ echo "branch/tag: $tag"
 echo "make options:" $arch_opts $make_opts $host_make_opts
 msg "Generating defconfig from \`make $defconfig\`..."
 make ARCH=arm64 distclean
-if ! make ARCH=arm64 O=out2 p20_defconfig; then
+if ! make ARCH=arm64 O=out2 Abdelhay_defconfig; then
     err "Failed generating .config, make sure it is actually available in arch/${arch}/configs/ and is a valid defconfig file"
     exit 2
 fi

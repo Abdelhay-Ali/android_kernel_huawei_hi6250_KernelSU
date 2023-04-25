@@ -28,7 +28,7 @@ jobs:
       with:
         arch: arm64
         compiler: gcc/9
-        defconfig: p20_defconfig
+        defconfig: Abdelhay_defconfig
         image: Image.gz-dtb
         
     - name: Get current date
